@@ -78,6 +78,7 @@ class MonitorConfig {
     this.maxAgeMinutes = defaultMaxAgeMinutes,
     this.chats = const <ChatRef>[],
     this.delivery = AlertDelivery.forward,
+    this.botToken = '',
   });
 
   static const int defaultMaxAgeMinutes = 10;
@@ -92,6 +93,13 @@ class MonitorConfig {
   final List<ChatRef> chats;
   final AlertDelivery delivery;
 
+  /// Optional. With a token the alert is posted by the bot as a link and a
+  /// tag; without one the original is forwarded by the owner themselves.
+  ///
+  /// The difference that matters is who Telegram thinks sent it: your own
+  /// messages never notify your other devices, a bot's do.
+  final String botToken;
+
   Duration get maxAge => Duration(minutes: maxAgeMinutes);
 
   /// True when the engine has enough information to start monitoring.
@@ -103,6 +111,9 @@ class MonitorConfig {
       keywords.any((k) => k.trim().isNotEmpty) &&
       (!delivery.forwards || targetChatId.trim().isNotEmpty);
 
+  /// True when alerts are posted by a bot rather than forwarded by the owner.
+  bool get usesBot => botToken.trim().isNotEmpty;
+
   MonitorConfig copyWith({
     int? folderId,
     String? folderName,
@@ -111,6 +122,7 @@ class MonitorConfig {
     int? maxAgeMinutes,
     List<ChatRef>? chats,
     AlertDelivery? delivery,
+    String? botToken,
   }) => MonitorConfig(
     folderId: folderId ?? this.folderId,
     folderName: folderName ?? this.folderName,
@@ -119,6 +131,7 @@ class MonitorConfig {
     maxAgeMinutes: maxAgeMinutes ?? this.maxAgeMinutes,
     chats: chats ?? this.chats,
     delivery: delivery ?? this.delivery,
+    botToken: botToken ?? this.botToken,
   );
 
   Map<String, dynamic> toJson() => {
@@ -129,6 +142,7 @@ class MonitorConfig {
     'maxAgeMinutes': maxAgeMinutes,
     'chats': [for (final c in chats) c.toJson()],
     'delivery': delivery.name,
+    'botToken': botToken,
   };
 
   static MonitorConfig fromJson(Map<String, dynamic> json) => MonitorConfig(
@@ -145,6 +159,7 @@ class MonitorConfig {
         ChatRef.fromJson(Map<String, dynamic>.from(c as Map)),
     ],
     delivery: AlertDelivery.parse(json['delivery']),
+    botToken: json['botToken'] as String? ?? '',
   );
 }
 

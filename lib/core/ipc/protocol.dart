@@ -46,6 +46,15 @@ abstract final class Cmd {
   /// Applies a scanned [SetupPayload]: joins channels, builds the folder.
   static const String setupApply = 'setup.apply';
 
+  /// Fires a local notification with the siren, to prove it works.
+  static const String diagAlert = 'diag.alert';
+
+  /// Delivers the newest message of a monitored chat down the real path.
+  static const String diagForward = 'diag.forward';
+
+  /// Reports what the engine currently considers monitorable.
+  static const String diagState = 'diag.state';
+
   static const Set<String> all = {
     uiAttached,
     uiDetached,
@@ -65,6 +74,9 @@ abstract final class Cmd {
     logGet,
     setupExport,
     setupApply,
+    diagAlert,
+    diagForward,
+    diagState,
   };
 }
 
@@ -90,6 +102,12 @@ abstract final class Ev {
   /// [Cmd.setupApply] finished, successfully or not.
   static const String setupDone = 'setupDone';
 
+  /// Answer to [Cmd.diagState].
+  static const String diagState = 'diagState';
+
+  /// Outcome of [Cmd.diagAlert] or [Cmd.diagForward].
+  static const String diagResult = 'diagResult';
+
   static const Set<String> all = {
     state,
     folders,
@@ -104,6 +122,8 @@ abstract final class Ev {
     setupPayload,
     setupProgress,
     setupDone,
+    diagState,
+    diagResult,
   };
 }
 

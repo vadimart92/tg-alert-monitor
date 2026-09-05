@@ -25,6 +25,7 @@ class SettingsStore {
   static const String keyCachedChats = 'cachedChats';
   static const String keyPhoneDisplay = 'phoneDisplay';
   static const String keyAlertDelivery = 'alertDelivery';
+  static const String keyBotToken = 'botToken';
 
   final SharedPreferences _prefs;
 
@@ -83,6 +84,7 @@ class SettingsStore {
           _prefs.getInt(keyMaxAgeMinutes) ?? MonitorConfig.defaultMaxAgeMinutes,
       chats: chats,
       delivery: AlertDelivery.parse(_prefs.getString(keyAlertDelivery)),
+      botToken: _prefs.getString(keyBotToken) ?? '',
     );
   }
 
@@ -102,6 +104,7 @@ class SettingsStore {
       ),
     );
     await _prefs.setString(keyAlertDelivery, config.delivery.name);
+    await _prefs.setString(keyBotToken, config.botToken.trim());
     await writeCachedChats(config.chats);
   }
 

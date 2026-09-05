@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tg_alert_monitor/core/bot/bot_api.dart';
 import 'package:tg_alert_monitor/core/ipc/protocol.dart';
 import 'package:tg_alert_monitor/core/model/app_config.dart';
 import 'package:tg_alert_monitor/core/model/match_entry.dart';
@@ -39,6 +40,7 @@ class Harness {
     MonitorConfig config = const MonitorConfig(),
     List<int> folderChatIds = const [-100111],
     bool alertsFail = false,
+    FakeBotApi? botApi,
   }) async {
     final transport = FakeTdTransport();
     final client = TdClient(
@@ -74,6 +76,12 @@ class Harness {
         alerts.add(entry);
         if (alertsFail) throw StateError('сирена мовчить');
       },
+      botApi: botApi == null
+          ? null
+          : (token) {
+              botApi.tokens.add(token);
+              return botApi;
+            },
     );
 
     await engine.start();
@@ -549,6 +557,156 @@ void main() {
     });
   });
 
+  // --- (g) delivery through a bot -------------------------------------------
+  group('bot delivery', () {
+    test(
+      'with a token the alert is posted by the bot, not forwarded',
+      () async {
+        final bot = FakeBotApi();
+        final config = _runnableConfig.copyWith(botToken: '123:AAA');
+        final harness = await Harness.create(config: config, botApi: bot);
+        await harness.authenticate();
+        await harness.engine.startMonitoring(config);
+        await harness.settle();
+
+        harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
+        await harness.settle();
+
+        // Nothing goes through the user session at all.
+        expect(harness.forwards, isEmpty);
+        expect(harness.texts, isEmpty);
+
+        expect(bot.tokens, ['123:AAA']);
+        expect(bot.sent, hasLength(1));
+        expect(bot.sent.single.chatId, '-100999');
+        // The rendering carries the tags and a link back to the original.
+        expect(bot.sent.single.html, contains('#шахед'));
+        expect(bot.sent.single.html, contains('https://t.me/c/111/1000'));
+        expect(harness.matchLog.statusUpdates.single.status, MatchStatus.sent);
+        await harness.dispose();
+      },
+    );
+
+    test('an empty token keeps the forward path', () async {
+      final bot = FakeBotApi();
+      final harness = await Harness.create(
+        config: _runnableConfig,
+        botApi: bot,
+      );
+      await harness.authenticate();
+      await harness.engine.startMonitoring(_runnableConfig);
+      await harness.settle();
+
+      harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
+      await harness.settle();
+
+      expect(bot.sent, isEmpty);
+      expect(harness.forwards, hasLength(1));
+      await harness.dispose();
+    });
+
+    test('a bot refusal is reported, and 4xx is not retried', () async {
+      final bot = FakeBotApi()
+        ..failWith = BotApiException(description: 'Forbidden', httpStatus: 403);
+      final config = _runnableConfig.copyWith(botToken: '123:AAA');
+      final harness = await Harness.create(config: config, botApi: bot);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(config);
+      await harness.settle();
+
+      harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
+      await harness.settle();
+
+      expect(bot.sent, isEmpty);
+      expect(bot.attempts, 1);
+      final update = harness.matchLog.statusUpdates.single;
+      expect(update.status, MatchStatus.failed);
+      expect(update.error, contains('адміністратором'));
+      await harness.dispose();
+    });
+  });
+
+  // --- (h) diagnostics -------------------------------------------------------
+  group('diagnostics', () {
+    test('diag.state reports what is actually watched', () async {
+      final harness = await Harness.create(config: _runnableConfig);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(_runnableConfig);
+      await harness.settle();
+
+      await harness.engine.handleCommand(Command(Cmd.diagState));
+      await harness.settle();
+
+      final state = harness.eventsOf(Ev.diagState).last;
+      expect(state.data['monitoring'], isTrue);
+      expect(state.data['watching'], hasLength(1));
+      await harness.dispose();
+    });
+
+    test('diag.alert fires the siren without touching the match log', () async {
+      final harness = await Harness.create(config: _runnableConfig);
+      await harness.authenticate();
+
+      await harness.engine.handleCommand(Command(Cmd.diagAlert));
+      await harness.settle();
+
+      expect(harness.alerts, hasLength(1));
+      expect(harness.matchLog.appended, isEmpty);
+      expect(harness.eventsOf(Ev.diagResult).single.data['ok'], isTrue);
+      await harness.dispose();
+    });
+
+    test('diag.forward sends the newest watched message for real', () async {
+      final harness = await Harness.create(config: _runnableConfig);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(_runnableConfig);
+      await harness.settle();
+      harness.transport.responders['getChatHistory'] = (_) => {
+        '@type': 'messages',
+        'total_count': 1,
+        'messages': [
+          {
+            '@type': 'message',
+            'id': 2000,
+            'chat_id': -100111,
+            'content': {
+              '@type': 'messageText',
+              'text': {'@type': 'formattedText', 'text': 'Останній допис'},
+            },
+          },
+        ],
+      };
+
+      await harness.engine.handleCommand(Command(Cmd.diagForward));
+      await harness.settle();
+
+      expect(harness.forwards, hasLength(1));
+      expect(harness.forwards.single['message_ids'], [2000]);
+      expect(harness.eventsOf(Ev.diagResult).single.data['ok'], isTrue);
+      await harness.dispose();
+    });
+
+    test('diag.forward says so when there is nothing to send', () async {
+      final harness = await Harness.create(config: _runnableConfig);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(_runnableConfig);
+      await harness.settle();
+      harness.transport.responders['getChatHistory'] = (_) => {
+        '@type': 'messages',
+        'total_count': 0,
+        'messages': <Object>[],
+      };
+
+      await harness.engine.handleCommand(Command(Cmd.diagForward));
+      await harness.settle();
+
+      final result = harness.eventsOf(Ev.diagResult).single;
+      expect(result.data['ok'], isFalse);
+      expect(harness.forwards, isEmpty);
+      await harness.dispose();
+    });
+  });
+
   // --- (f) setup transfer --------------------------------------------------
   group('setup transfer', () {
     const config = MonitorConfig(
@@ -973,6 +1131,53 @@ void main() {
       await harness.dispose();
     });
 
+    test('the owner\'s own post in a watched channel matches', () async {
+      // TDLib marks a post as outgoing when the owner made it. A channel the
+      // owner runs is the obvious way to test the app, and used to be the one
+      // case where nothing whatsoever happened.
+      final harness = await monitoring();
+
+      harness.transport.push(
+        harness.textMessage(text: 'Шахед над містом', isOutgoing: true),
+      );
+      await harness.settle();
+
+      expect(harness.matchLog.appended, hasLength(1));
+      expect(harness.forwards, hasLength(1));
+      await harness.dispose();
+    });
+
+    test('our own post in the target channel is ignored', () async {
+      // Loop prevention, which is all the outgoing check was ever for.
+      final harness = await Harness.create(
+        config: _runnableConfig,
+        folderChatIds: [-100111, -100999],
+      );
+      await harness.authenticate();
+      await harness.engine.startMonitoring(
+        _runnableConfig.copyWith(
+          chats: const [
+            ChatRef(id: -100111, title: 'Джерело', isChannel: true),
+            ChatRef(id: -100999, title: 'Ціль', isChannel: true),
+          ],
+        ),
+      );
+      await harness.settle();
+
+      harness.transport.push(
+        harness.textMessage(
+          chatId: -100999,
+          text: 'Шахед над містом',
+          isOutgoing: true,
+        ),
+      );
+      await harness.settle();
+
+      expect(harness.matchLog.appended, isEmpty);
+      expect(harness.forwards, isEmpty);
+      await harness.dispose();
+    });
+
     test('a caption on a photo matches too', () async {
       final harness = await monitoring();
 
@@ -1001,10 +1206,9 @@ void main() {
           'chat outside the folder',
           (h) => h.textMessage(chatId: -100999999, messageId: 1),
         ),
-        (
-          'outgoing message',
-          (h) => h.textMessage(messageId: 2, isOutgoing: true),
-        ),
+        // An outgoing message is NOT here on purpose: the owner's own post in
+        // a watched channel is a real match. Only the target chat is ignored,
+        // which the two tests above cover.
         (
           'older than maxAge',
           (h) => h.textMessage(

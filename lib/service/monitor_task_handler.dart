@@ -10,8 +10,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import '../core/bot/bot_api.dart';
 import '../core/ipc/protocol.dart';
 import '../core/storage/match_log.dart';
 import '../core/storage/settings_store.dart';
@@ -44,6 +46,9 @@ class MonitorTaskHandler extends TaskHandler {
 
   /// Device-language strings. Loaded once, at the start of the bootstrap.
   L? _s;
+
+  /// Shared by every Bot API call; only built when a token is configured.
+  http.Client? _http;
 
   String? _nativeVersion;
   DateTime? _detachedAt;
@@ -166,6 +171,9 @@ class MonitorTaskHandler extends TaskHandler {
       },
       saveMonitoringActive: settings.setMonitoringActive,
       alert: notifier.notify,
+      // One HTTP client for the isolate's life: a new one per alert would
+      // re-open a TLS connection for every message.
+      botApi: (token) => HttpBotApi(_http ??= http.Client(), token),
       strings: LocalisedEngineStrings(strings),
     );
     engine.onClientDead = () => unawaited(_restartClient());
@@ -412,6 +420,8 @@ class MonitorTaskHandler extends TaskHandler {
 
     _engine = null;
     _client = null;
+    _http?.close();
+    _http = null;
   }
 
   @override

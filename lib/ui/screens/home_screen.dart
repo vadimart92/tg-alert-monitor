@@ -11,6 +11,7 @@ import '../../core/storage/settings_store.dart';
 import '../../l10n/app_localizations.dart';
 import '../../service/monitor_engine.dart';
 import '../service_bridge.dart';
+import 'diagnostics_screen.dart';
 import 'log_screen.dart';
 import 'login_screen.dart';
 import 'settings_screen.dart';
@@ -132,6 +133,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _stop() => widget.bridge.send(Command(Cmd.monitorStop));
 
+  void _openDiagnostics() => Navigator.push(
+    context,
+    MaterialPageRoute<void>(
+      builder: (_) =>
+          DiagnosticsScreen(bridge: widget.bridge, settings: widget.settings),
+    ),
+  );
+
   void _shareSetup() => Navigator.push(
     context,
     MaterialPageRoute<void>(
@@ -170,6 +179,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.qr_code_2),
                   title: Text(l.setupShare),
+                ),
+              ),
+              PopupMenuItem(
+                value: _openDiagnostics,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.medical_services_outlined),
+                  title: Text(l.diagnostics),
                 ),
               ),
               PopupMenuItem(

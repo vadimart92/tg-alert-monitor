@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:tg_alert_monitor/core/bot/bot_api.dart';
 import 'package:tg_alert_monitor/core/model/match_entry.dart';
 import 'package:tg_alert_monitor/core/storage/match_log.dart';
 import 'package:tg_alert_monitor/core/td/td_transport.dart';
@@ -112,4 +113,42 @@ class FakeClock {
   void advance(Duration duration) => _now = _now.add(duration);
 
   void set(DateTime value) => _now = value;
+}
+
+/// One `sendMessage` the engine asked the bot to make.
+class BotMessage {
+  const BotMessage(this.chatId, this.html);
+  final String chatId;
+  final String html;
+}
+
+/// In-memory [BotApi]. Records what was posted, and fails on demand.
+class FakeBotApi implements BotApi {
+  final List<BotMessage> sent = <BotMessage>[];
+
+  /// Tokens the engine built a client for.
+  final List<String> tokens = <String>[];
+
+  /// Every call, including the ones that threw.
+  int attempts = 0;
+
+  BotApiException? failWith;
+
+  @override
+  Future<BotIdentity> getMe() async =>
+      const BotIdentity(id: 1, name: 'Тест', username: 'test_bot');
+
+  @override
+  Future<String> getChat(String chatId) async => 'Канал $chatId';
+
+  @override
+  Future<void> sendMessage({
+    required String chatId,
+    required String html,
+  }) async {
+    attempts++;
+    final failure = failWith;
+    if (failure != null) throw failure;
+    sent.add(BotMessage(chatId, html));
+  }
 }
