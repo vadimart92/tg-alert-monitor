@@ -121,8 +121,15 @@ running.
 
 The siren is `assets/siren_ostap_calm.ogg`. Android itself plays it, as the
 sound of the "keyword matches" notification channel, with alarm audio
-attributes — so it is audible even with the phone on silent. Volume, vibration
-and importance can be changed in that channel's system settings.
+attributes — so it plays on the alarm stream and a silenced ringer does not mute
+it. Do Not Disturb still does; bypassing that needs a permission you would have
+to grant by hand. The alert is coloured red and marked as an alarm. Volume,
+vibration and importance can be changed in that channel's system settings.
+
+A notification channel's sound and importance are frozen when Android first
+creates it, so changing them in the app has no effect on an install that
+already has the channel. When they genuinely have to change, the channel id is
+versioned (`tg_alert_matches_v2`) and the old one deleted.
 
 ## Who posts the alert: you, or a bot
 
@@ -136,8 +143,13 @@ your own forwards arrive there silently.
 
 Setting a **bot token** in the settings fixes that. A bot is a different sender,
 so its post raises a normal notification on your phones. A bot cannot forward
-from channels it is not in, so in this mode the alert is a rendered message —
-the tags, the text, and a link back to the original — rather than a forward.
+from channels it is not in, so in this mode it posts a short message of its own:
+the tags, the time, and a bare link to the original, with Telegram's own link
+preview doing the rest — the post's text, media and author, rendered properly.
+
+That preview only exists for **public** source channels. A private one is
+linked as `t.me/c/…`, which Telegram will not preview for anyone, so for those
+the bot includes the post's text instead.
 
 Get the token from @BotFather and add the bot as an administrator of the target
 channel with the "Post messages" right. Leave the field empty to keep

@@ -611,7 +611,15 @@ class MonitorEngine {
         chatId: chatId,
         messageId: messageId,
         targetChatId: _config.targetChatId,
+        link: link,
         html: MessageFormatter.format(
+          chatTitle: entry.chatTitle,
+          keywords: keywords,
+          text: text,
+          link: link,
+          time: entry.time,
+        ),
+        botHtml: MessageFormatter.formatForBot(
           chatTitle: entry.chatTitle,
           keywords: keywords,
           text: text,
@@ -731,8 +739,11 @@ class MonitorEngine {
     }
 
     try {
-      await factory(_config.botToken.trim())
-          .sendMessage(chatId: target, html: task.html);
+      await factory(_config.botToken.trim()).sendMessage(
+        chatId: target,
+        html: task.botHtml,
+        showPreview: MessageFormatter.buildsPreview(task.link),
+      );
     } on BotApiException catch (error) {
       throw DeliveryFailure(
         error.userMessage,
@@ -1340,13 +1351,22 @@ class MonitorEngine {
     final (chatId, messageId, text) = found;
     final link = await _messageLink(chatId, messageId);
     try {
+      final title = _chatTitles[chatId] ?? '$chatId';
       await _deliverTask(
         ForwardTask(
           chatId: chatId,
           messageId: messageId,
           targetChatId: _config.targetChatId,
+          link: link,
           html: MessageFormatter.format(
-            chatTitle: _chatTitles[chatId] ?? '$chatId',
+            chatTitle: title,
+            keywords: const ['тест'],
+            text: text,
+            link: link,
+            time: _now(),
+          ),
+          botHtml: MessageFormatter.formatForBot(
+            chatTitle: title,
             keywords: const ['тест'],
             text: text,
             link: link,

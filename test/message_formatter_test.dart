@@ -177,4 +177,54 @@ void main() {
       expect(result, contains('07:04'));
     });
   });
+
+  group('formatForBot', () {
+    test('a public link is left bare for Telegram to preview', () {
+      final out = MessageFormatter.formatForBot(
+        chatTitle: 'Тривога',
+        keywords: ['шахед'],
+        text: 'Дуже довгий текст допису, який не треба повторювати',
+        link: 'https://t.me/kyiv_alarm/55',
+        time: DateTime(2026, 9, 5, 7, 30),
+      );
+
+      expect(out, contains('#шахед'));
+      expect(out, contains('https://t.me/kyiv_alarm/55'));
+      expect(out, contains('07:30'));
+      // The whole point: the preview carries the content, not the text.
+      expect(out, isNot(contains('Дуже довгий текст')));
+      // A bare url, not an anchor — Telegram previews the former.
+      expect(out, isNot(contains('<a href')));
+    });
+
+    test('a private link falls back to the full rendering', () {
+      final out = MessageFormatter.formatForBot(
+        chatTitle: 'Тривога',
+        keywords: ['шахед'],
+        text: 'Текст допису',
+        link: 'https://t.me/c/111/55',
+        time: DateTime(2026, 9, 5, 7, 30),
+      );
+
+      // Telegram previews nothing behind /c/, so the body must be included.
+      expect(out, contains('Текст допису'));
+    });
+
+    test('buildsPreview tells the two apart', () {
+      expect(MessageFormatter.buildsPreview('https://t.me/kyiv/55'), isTrue);
+      expect(MessageFormatter.buildsPreview('https://t.me/c/111/55'), isFalse);
+      expect(MessageFormatter.buildsPreview(''), isFalse);
+    });
+
+    test('the result still respects the Telegram limit', () {
+      final out = MessageFormatter.formatForBot(
+        chatTitle: 'Т' * 5000,
+        keywords: ['шахед'],
+        text: 'текст',
+        link: 'https://t.me/kyiv/55',
+        time: DateTime(2026, 9, 5, 7, 30),
+      );
+      expect(out.length, lessThanOrEqualTo(MessageFormatter.telegramLimit));
+    });
+  });
 }
