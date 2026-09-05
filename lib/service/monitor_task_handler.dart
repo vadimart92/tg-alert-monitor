@@ -32,6 +32,9 @@ void startCallback() {
 class MonitorTaskHandler extends TaskHandler {
   static const Duration _selfStopDelay = Duration(seconds: 60);
 
+  /// Id of the "Стоп" action in the ongoing notification.
+  static const String stopButtonId = 'stop_monitoring';
+
   AppLogger? _logger;
   MatchLog? _matchLog;
   http.Client? _httpClient;
@@ -43,6 +46,7 @@ class MonitorTaskHandler extends TaskHandler {
   bool _restarting = false;
   Future<void>? _bootstrapFuture;
   String _lastNotificationText = '';
+  bool? _lastNotificationHadStopButton;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
@@ -154,6 +158,7 @@ class MonitorTaskHandler extends TaskHandler {
     if (settings.monitoringActive && config.isRunnable) {
       logger.info('monitoringActive was set; resuming after restart');
       await engine.startMonitoring(config);
+      await _updateNotification(engine);
     }
   }
 
@@ -273,15 +278,47 @@ class MonitorTaskHandler extends TaskHandler {
               '${engine.matchCount} збігів • $connection'
         : 'Моніторинг зупинено • $connection';
 
-    if (text == _lastNotificationText) return;
+    // A "Стоп" action is only meaningful while something is running.
+    final showStop = engine.isMonitoring;
+    if (text == _lastNotificationText &&
+        showStop == _lastNotificationHadStopButton) {
+      return;
+    }
     _lastNotificationText = text;
+    _lastNotificationHadStopButton = showStop;
     try {
       await FlutterForegroundTask.updateService(
         notificationTitle: 'TG Alert Monitor',
         notificationText: text,
+        notificationButtons: showStop ? _stopButtons : const [],
       );
     } catch (error) {
       _logger?.warn('notification update failed: $error');
+    }
+  }
+
+  static const List<NotificationButton> _stopButtons = [
+    NotificationButton(id: stopButtonId, text: 'Стоп'),
+  ];
+
+  @override
+  void onNotificationButtonPressed(String id) {
+    if (id != stopButtonId) return;
+    _logger?.info('stop pressed in notification');
+    unawaited(_stopFromNotification());
+  }
+
+  /// Stops monitoring without tearing the service down: the owner can start it
+  /// again from the app, and `monitoringActive` is cleared so a reboot does not
+  /// silently resume.
+  Future<void> _stopFromNotification() async {
+    final engine = _engine;
+    if (engine == null) return;
+    try {
+      await engine.stopMonitoring();
+      await _updateNotification(engine);
+    } catch (error) {
+      _logger?.error('stop from notification failed: $error');
     }
   }
 
@@ -316,6 +353,11 @@ class MonitorTaskHandler extends TaskHandler {
 
     try {
       await engine.handleCommand(command);
+      // Reflect a start/stop in the notification now rather than on the next
+      // one-minute tick.
+      if (command.cmd == Cmd.monitorStart || command.cmd == Cmd.monitorStop) {
+        await _updateNotification(engine);
+      }
     } catch (error) {
       _logger?.error('command ${command.cmd} failed: $error');
     }
