@@ -281,5 +281,8 @@
   "botToken": "Bot token (optional)",
   "botTokenHelp": "Empty — you forward the original yourself. With a token — a bot posts links and tags.",
   "botWhyHelp": "A message you send never notifies your own other devices, which is why your own forward is invisible on a second phone. A bot is a different sender, so its post arrives as a normal notification. @BotFather issues the token; the bot has to be an administrator of the target channel.",
-  "botTokenInvalid": "That does not look like a token: 123456:AA… is expected"
+  "botTokenInvalid": "That does not look like a token: 123456:AA… is expected",
+
+  "diagKeywordsInForce": "Words the service is searching for: {keywords}",
+  "diagNoKeywords": "The service has no keywords at all — which is exactly why nothing fires."
 }

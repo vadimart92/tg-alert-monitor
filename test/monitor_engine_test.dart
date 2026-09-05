@@ -20,6 +20,7 @@ class Harness {
     this.clock,
     this.events,
     this.savedConfigs,
+    this.savedChats,
     this.monitoringFlags,
     this.alerts,
   );
@@ -31,6 +32,9 @@ class Harness {
   final FakeClock clock;
   final List<Event> events;
   final List<MonitorConfig> savedConfigs;
+
+  /// Chat lists written on their own, without the rest of the config.
+  final List<List<ChatRef>> savedChats;
   final List<bool> monitoringFlags;
 
   /// Matches handed to the local notifier.
@@ -51,6 +55,7 @@ class Harness {
     final clock = FakeClock(DateTime.utc(2026, 9, 5, 7, 0));
     final events = <Event>[];
     final savedConfigs = <MonitorConfig>[];
+    final savedChats = <List<ChatRef>>[];
     final monitoringFlags = <bool>[];
     final alerts = <MatchEntry>[];
 
@@ -68,6 +73,7 @@ class Harness {
       logger: AppLogger(),
       emit: events.add,
       saveConfig: (updated) async => savedConfigs.add(updated),
+      saveChats: (chats) async => savedChats.add(chats),
       saveMonitoringActive: (active) async => monitoringFlags.add(active),
       config: config,
       now: clock.call,
@@ -95,6 +101,7 @@ class Harness {
       clock,
       events,
       savedConfigs,
+      savedChats,
       monitoringFlags,
       alerts,
     );
@@ -628,6 +635,43 @@ void main() {
 
   // --- (h) diagnostics -------------------------------------------------------
   group('diagnostics', () {
+    test('a folder refresh never writes keywords back', () async {
+      // The engine refreshes the folder on a timer, from its own copy of the
+      // config. If that write carried the keywords, a word the owner added a
+      // moment ago in the UI would be silently undone — and the home screen
+      // would keep showing it, because it holds its own copy in memory.
+      final harness = await Harness.create(config: _runnableConfig);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(_runnableConfig);
+      await harness.settle();
+      harness.savedConfigs.clear();
+      harness.savedChats.clear();
+
+      await harness.engine.tick();
+      await harness.settle();
+      harness.clock.advance(const Duration(minutes: 31));
+      await harness.engine.tick();
+      await harness.settle();
+
+      expect(harness.savedChats, isNotEmpty);
+      expect(harness.savedConfigs, isEmpty);
+      await harness.dispose();
+    });
+
+    test('diag.state carries the keywords in force', () async {
+      final harness = await Harness.create(config: _runnableConfig);
+      await harness.authenticate();
+
+      await harness.engine.handleCommand(Command(Cmd.diagState));
+      await harness.settle();
+
+      expect(harness.eventsOf(Ev.diagState).last.data['keywords'], [
+        'шахед',
+        'тест-ключ',
+      ]);
+      await harness.dispose();
+    });
+
     test('diag.state reports what is actually watched', () async {
       final harness = await Harness.create(config: _runnableConfig);
       await harness.authenticate();

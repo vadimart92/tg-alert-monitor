@@ -169,6 +169,10 @@ class MonitorTaskHandler extends TaskHandler {
         await settings.reload();
         await settings.writeConfig(updated);
       },
+      saveChats: (chats) async {
+        await settings.reload();
+        await settings.writeCachedChats(chats);
+      },
       saveMonitoringActive: settings.setMonitoringActive,
       alert: notifier.notify,
       // One HTTP client for the isolate's life: a new one per alert would

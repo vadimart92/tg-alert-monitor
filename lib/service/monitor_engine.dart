@@ -119,6 +119,7 @@ class MonitorEngine {
     required this._logger,
     required this._emit,
     required this._saveConfig,
+    required this._saveChats,
     required this._saveMonitoringActive,
     MonitorConfig config = const MonitorConfig(),
     DateTime Function()? now,
@@ -146,6 +147,16 @@ class MonitorEngine {
   final AppLogger _logger;
   final void Function(Event event) _emit;
   final Future<void> Function(MonitorConfig config) _saveConfig;
+
+  /// Persists only the resolved chat list.
+  ///
+  /// Separate from [_saveConfig] on purpose. A folder refresh happens on a
+  /// timer inside the service, from the engine's own copy of the config — and
+  /// that copy can be older than what the owner just typed in the UI. Writing
+  /// the whole config from here would quietly undo a keyword added a moment
+  /// ago, which is a very hard thing to notice and an even harder one to
+  /// explain.
+  final Future<void> Function(List<ChatRef> chats) _saveChats;
   final Future<void> Function(bool active) _saveMonitoringActive;
   final LocalAlert? _alert;
 
@@ -512,7 +523,7 @@ class MonitorEngine {
     _adoptChats(chats);
     _lastFolderRefresh = _now();
     _config = _config.copyWith(chats: chats);
-    await _saveConfig(_config);
+    await _saveChats(chats);
     _logger.info('folder $folderId resolved to ${chats.length} chats');
     if (emitEvent) {
       _emit(
@@ -1008,7 +1019,7 @@ class MonitorEngine {
             _adoptChats(chats);
             _config = _config.copyWith(chats: chats);
             _lastFolderRefresh = _now();
-            await _saveConfig(_config);
+            await _saveChats(chats);
           }
           _emit(
             Event(Ev.folderChats, {
@@ -1280,6 +1291,9 @@ class MonitorEngine {
         'lastFolderRefresh': _lastFolderRefresh?.toIso8601String(),
         'usesBot': _config.usesBot,
         'delivery': _config.delivery.name,
+        // What the engine will actually match against, which is not always
+        // what the home screen still has in memory.
+        'keywords': _config.keywords,
       }),
     );
   }
