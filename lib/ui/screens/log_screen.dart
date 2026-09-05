@@ -12,13 +12,16 @@ import '../../core/bot/message_formatter.dart';
 import '../../core/ipc/protocol.dart';
 import '../../core/model/match_entry.dart';
 import '../../core/storage/match_log.dart';
+import '../../core/storage/settings_store.dart';
 import '../../l10n/app_localizations.dart';
 import '../service_bridge.dart';
+import 'diagnostics_screen.dart';
 
 class LogScreen extends StatefulWidget {
-  const LogScreen({super.key, required this.bridge});
+  const LogScreen({super.key, required this.bridge, required this.settings});
 
   final ServiceBridge bridge;
+  final SettingsStore settings;
 
   @override
   State<LogScreen> createState() => _LogScreenState();
@@ -54,7 +57,7 @@ class _LogScreenState extends State<LogScreen> {
   Widget build(BuildContext context) {
     final l = L.of(context);
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: Text(l.journal),
@@ -62,13 +65,19 @@ class _LogScreenState extends State<LogScreen> {
             tabs: [
               Tab(text: l.tabMatches),
               Tab(text: l.tabSystem),
+              Tab(text: l.diagnostics),
             ],
           ),
           actions: [
-            IconButton(
-              tooltip: l.clear,
-              icon: const Icon(Icons.delete_outline),
-              onPressed: _clear,
+            Builder(
+              // Nothing to clear on the diagnostics tab.
+              builder: (context) => DefaultTabController.of(context).index == 2
+                  ? const SizedBox.shrink()
+                  : IconButton(
+                      tooltip: l.clear,
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: _clear,
+                    ),
             ),
           ],
         ),
@@ -77,7 +86,14 @@ class _LogScreenState extends State<LogScreen> {
             : ListenableBuilder(
                 listenable: widget.bridge,
                 builder: (context, _) => TabBarView(
-                  children: [_matchesTab(widget.bridge.matches), _systemTab()],
+                  children: [
+                    _matchesTab(widget.bridge.matches),
+                    _systemTab(),
+                    DiagnosticsView(
+                      bridge: widget.bridge,
+                      settings: widget.settings,
+                    ),
+                  ],
                 ),
               ),
       ),

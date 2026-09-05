@@ -48,6 +48,7 @@ class DiagState {
   const DiagState({
     required this.monitoring,
     required this.watching,
+    required this.keywords,
     this.lastFolderRefresh,
   });
 
@@ -55,6 +56,9 @@ class DiagState {
 
   /// Titles of the chats under watch.
   final List<String> watching;
+
+  /// What the service will actually match against.
+  final List<String> keywords;
   final DateTime? lastFolderRefresh;
 }
 
@@ -330,6 +334,10 @@ class ServiceBridge extends ChangeNotifier {
             if (watching is List)
               for (final chat in watching)
                 if (chat is Map) (chat['title'] ?? '${chat['id']}').toString(),
+          ],
+          keywords: [
+            if (event.data['keywords'] is List)
+              for (final k in event.data['keywords'] as List) k.toString(),
           ],
           lastFolderRefresh: _parseTime(event.data['lastFolderRefresh']),
         );

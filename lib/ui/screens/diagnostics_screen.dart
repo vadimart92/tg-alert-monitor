@@ -4,6 +4,8 @@
 /// so a green result means the thing itself works.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/ipc/protocol.dart';
@@ -13,8 +15,10 @@ import '../../core/storage/settings_store.dart';
 import '../../l10n/app_localizations.dart';
 import '../service_bridge.dart';
 
-class DiagnosticsScreen extends StatefulWidget {
-  const DiagnosticsScreen({
+/// Lives as a tab of the journal: it answers the same question the log does,
+/// only ahead of time rather than after the fact.
+class DiagnosticsView extends StatefulWidget {
+  const DiagnosticsView({
     super.key,
     required this.bridge,
     required this.settings,
@@ -24,10 +28,10 @@ class DiagnosticsScreen extends StatefulWidget {
   final SettingsStore settings;
 
   @override
-  State<DiagnosticsScreen> createState() => _DiagnosticsScreenState();
+  State<DiagnosticsView> createState() => _DiagnosticsViewState();
 }
 
-class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
+class _DiagnosticsViewState extends State<DiagnosticsView> {
   final _sample = TextEditingController();
   late MonitorConfig _config;
 
@@ -37,7 +41,16 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   void initState() {
     super.initState();
     _config = widget.settings.readConfig();
+    unawaited(_reloadConfig());
     widget.bridge.requestDiagState();
+  }
+
+  /// The service isolate writes settings too, so this isolate's cache can be
+  /// behind. Reading stale keywords here would send someone hunting a bug in
+  /// the matcher that is really a bug in what was saved.
+  Future<void> _reloadConfig() async {
+    await widget.settings.reload();
+    if (mounted) setState(() => _config = widget.settings.readConfig());
   }
 
   @override
@@ -57,16 +70,19 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(l.diagnostics)),
-      body: ListenableBuilder(
-        listenable: widget.bridge,
-        builder: (context, _) => ListView(
+    return ListenableBuilder(
+      listenable: widget.bridge,
+      builder: (context, _) => RefreshIndicator(
+        onRefresh: () async {
+          await _reloadConfig();
+          widget.bridge.requestDiagState();
+        },
+        child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             _watchedCard(widget.bridge),
             const SizedBox(height: 12),
-            _matchCard(),
+            _matchCard(widget.bridge),
             const SizedBox(height: 12),
             _actionsCard(widget.bridge),
           ],
@@ -151,11 +167,15 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
   /// Runs the real [KeywordMatcher] over pasted text, so "why did this post
   /// not fire" is answerable without posting anything.
-  Widget _matchCard() {
+  Widget _matchCard(ServiceBridge bridge) {
+    // The service's list wins: it is the one that will decide a real message.
+    // Showing it here is the point — "the keyword is in the app but nothing
+    // fires" is otherwise unanswerable from the outside.
+    final keywords = bridge.diagState?.keywords ?? _config.keywords;
     final text = _sample.text.trim();
-    final matcher = KeywordMatcher(_config.keywords);
+    final matcher = KeywordMatcher(keywords);
     final matched = text.isEmpty ? const <String>[] : matcher.match(text);
-    final hasIncludes = text.isNotEmpty && _rawIncludeHit(text);
+    final hasIncludes = text.isNotEmpty && _rawIncludeHit(keywords, text);
 
     return Card(
       child: Padding(
@@ -164,6 +184,18 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(l.diagTryText, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(
+              keywords.isEmpty
+                  ? l.diagNoKeywords
+                  : l.diagKeywordsInForce(keywords.join(', ')),
+              style: TextStyle(
+                fontSize: 12,
+                color: keywords.isEmpty
+                    ? Theme.of(context).colorScheme.error
+                    : Theme.of(context).hintColor,
+              ),
+            ),
             const SizedBox(height: 8),
             TextField(
               controller: _sample,
@@ -196,9 +228,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   }
 
   /// True when some include keyword is in [text], ignoring exclusions.
-  bool _rawIncludeHit(String text) {
+  bool _rawIncludeHit(List<String> keywords, String text) {
     final includes = [
-      for (final keyword in _config.keywords)
+      for (final keyword in keywords)
         if (!keyword.startsWith(exclusionPrefix)) keyword,
     ];
     return KeywordMatcher(includes).match(text).isNotEmpty;

@@ -176,14 +176,16 @@ session stay on their own phone.
 
 ## Diagnostics
 
-The ⧉ menu → «Diagnostics», for when a keyword was posted and nothing happened:
+The journal's third tab, «Diagnostics», for when a keyword was posted and
+nothing happened:
 
 * **What is being watched** — whether monitoring is actually on, and which
   chats the engine currently holds. The chat list is re-resolved every half
   hour, so a channel added to the folder a minute ago is not watched yet;
   «Refresh the chat list» does it now.
 * **Try some text** — runs the real matcher over pasted text and says which
-  keyword fired, or that an exclusion word blocked it.
+  keyword fired, or that an exclusion word blocked it. It lists the keywords
+  **the service** holds, which is not always what the home screen still shows.
 * **Test the siren** — fires a local notification through the real notifier.
 * **Test delivery** — takes the newest message from a watched chat and sends it
   down exactly the path a real alert takes, forward or bot.

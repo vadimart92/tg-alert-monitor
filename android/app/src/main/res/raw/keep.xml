@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The siren is looked up by name at runtime (getIdentifier), so nothing in
+     the code or the manifest references it and the release resource shrinker
+     strips it — the notification then fails with "resource not found" and the
+     alert is silent. This is the documented way to hold onto it. -->
+<resources
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/siren_ostap_calm" />
