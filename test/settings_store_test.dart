@@ -30,7 +30,6 @@ void main() {
       folderId: 7,
       folderName: 'Тривога',
       keywords: ['шахед', 'балістика'],
-      botToken: '123456:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
       targetChatId: '-1001234567890',
       maxAgeMinutes: 25,
       chats: [
@@ -45,7 +44,6 @@ void main() {
     expect(restored.folderId, 7);
     expect(restored.folderName, 'Тривога');
     expect(restored.keywords, ['шахед', 'балістика']);
-    expect(restored.botToken, config.botToken);
     expect(restored.targetChatId, '-1001234567890');
     expect(restored.maxAgeMinutes, 25);
     expect(restored.chats, config.chats);

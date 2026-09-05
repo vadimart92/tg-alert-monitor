@@ -48,7 +48,6 @@ class MonitorConfig {
     this.folderId,
     this.folderName = '',
     this.keywords = const <String>[],
-    this.botToken = '',
     this.targetChatId = '',
     this.maxAgeMinutes = defaultMaxAgeMinutes,
     this.chats = const <ChatRef>[],
@@ -61,7 +60,6 @@ class MonitorConfig {
   final int? folderId;
   final String folderName;
   final List<String> keywords;
-  final String botToken;
   final String targetChatId;
   final int maxAgeMinutes;
   final List<ChatRef> chats;
@@ -69,17 +67,17 @@ class MonitorConfig {
   Duration get maxAge => Duration(minutes: maxAgeMinutes);
 
   /// True when the engine has enough information to start monitoring.
+  ///
+  /// No bot token: delivery goes through the owner's own Telegram session.
   bool get isRunnable =>
       folderId != null &&
       keywords.any((k) => k.trim().isNotEmpty) &&
-      botToken.trim().isNotEmpty &&
       targetChatId.trim().isNotEmpty;
 
   MonitorConfig copyWith({
     int? folderId,
     String? folderName,
     List<String>? keywords,
-    String? botToken,
     String? targetChatId,
     int? maxAgeMinutes,
     List<ChatRef>? chats,
@@ -87,7 +85,6 @@ class MonitorConfig {
     folderId: folderId ?? this.folderId,
     folderName: folderName ?? this.folderName,
     keywords: keywords ?? this.keywords,
-    botToken: botToken ?? this.botToken,
     targetChatId: targetChatId ?? this.targetChatId,
     maxAgeMinutes: maxAgeMinutes ?? this.maxAgeMinutes,
     chats: chats ?? this.chats,
@@ -97,7 +94,6 @@ class MonitorConfig {
     'folderId': folderId,
     'folderName': folderName,
     'keywords': keywords,
-    'botToken': botToken,
     'targetChatId': targetChatId,
     'maxAgeMinutes': maxAgeMinutes,
     'chats': [for (final c in chats) c.toJson()],
@@ -109,7 +105,6 @@ class MonitorConfig {
     keywords: [
       for (final k in (json['keywords'] as List? ?? const [])) k.toString(),
     ],
-    botToken: json['botToken'] as String? ?? '',
     targetChatId: json['targetChatId'] as String? ?? '',
     maxAgeMinutes:
         (json['maxAgeMinutes'] as num?)?.toInt() ?? defaultMaxAgeMinutes,

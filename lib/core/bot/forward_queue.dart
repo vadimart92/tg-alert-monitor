@@ -5,7 +5,6 @@ import 'dart:async';
 import 'dart:collection';
 
 import '../model/match_entry.dart';
-import 'bot_api.dart';
 
 /// One queued post.
 class ForwardTask {
@@ -14,15 +13,38 @@ class ForwardTask {
     required this.messageId,
     required this.targetChatId,
     required this.html,
+    this.tag = '',
   });
 
-  /// Source chat and message — used to address status updates.
+  /// Source chat and message — used to address status updates, and to forward
+  /// the original through the owner's own session.
   final int chatId;
   final int messageId;
 
-  /// Destination channel and rendered payload.
+  /// Destination channel.
   final String targetChatId;
+
+  /// Self-contained rendering, used when the original cannot be forwarded.
   final String html;
+
+  /// Hashtag line posted under a forwarded original.
+  final String tag;
+}
+
+/// Raised by a delivery attempt to tell the queue how to react.
+class DeliveryFailure implements Exception {
+  DeliveryFailure(this.message, {this.isPermanent = false, this.retryAfter});
+
+  final String message;
+
+  /// No retry can help: missing rights, unknown chat, deleted message.
+  final bool isPermanent;
+
+  /// Set when the far side asked us to wait a specific time.
+  final Duration? retryAfter;
+
+  @override
+  String toString() => 'DeliveryFailure($message)';
 }
 
 /// Reports the outcome of a task.
@@ -40,7 +62,7 @@ typedef ForwardStatusCallback = void Function(
 /// no amount of retrying fixes a bad token or a missing admin right.
 class ForwardQueue {
   ForwardQueue({
-    required this._apiProvider,
+    required this._deliver,
     required this.onStatus,
     this.minInterval = const Duration(milliseconds: 1500),
     this.maxAttempts = 10,
@@ -49,7 +71,10 @@ class ForwardQueue {
     this._onLog,
   });
 
-  final BotApi Function() _apiProvider;
+  /// How a task is actually delivered. Injected so the queue keeps only the
+  /// ordering, spacing and retry policy, and knows nothing about how a message
+  /// reaches Telegram.
+  final Future<void> Function(ForwardTask task) _deliver;
   final ForwardStatusCallback onStatus;
   final Duration minInterval;
   final int maxAttempts;
@@ -87,7 +112,7 @@ class ForwardQueue {
         if (_sentAny) await Future<void>.delayed(minInterval);
         if (_stopped) break;
         final task = _queue.removeFirst();
-        await _deliver(task);
+        await _deliverWithRetries(task);
         _sentAny = true;
       }
     } finally {
@@ -95,30 +120,27 @@ class ForwardQueue {
     }
   }
 
-  Future<void> _deliver(ForwardTask task) async {
+  Future<void> _deliverWithRetries(ForwardTask task) async {
     var backoff = initialBackoff;
 
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       if (_stopped) return;
       try {
-        await _apiProvider().sendMessage(
-          chatId: task.targetChatId,
-          html: task.html,
-        );
+        await _deliver(task);
         onStatus(task, MatchStatus.sent, null);
         return;
-      } on BotApiException catch (error) {
+      } on DeliveryFailure catch (error) {
         if (error.isPermanent) {
           _onLog?.call(
-            'forward failed permanently for ${task.chatId}/${task.messageId}: '
-            '${error.description}',
+            'delivery failed permanently for '
+            '${task.chatId}/${task.messageId}: ${error.message}',
           );
-          onStatus(task, MatchStatus.failed, error.userMessage);
+          onStatus(task, MatchStatus.failed, error.message);
           return;
         }
 
-        if (error.isRateLimited) {
-          final wait = error.retryAfter ?? const Duration(seconds: 5);
+        final wait = error.retryAfter;
+        if (wait != null) {
           _onLog?.call('rate limited, waiting ${wait.inSeconds}s');
           await Future<void>.delayed(wait);
           // Flood waits are not the caller's fault: do not burn an attempt.
@@ -128,14 +150,14 @@ class ForwardQueue {
 
         if (attempt == maxAttempts) {
           _onLog?.call(
-            'forward gave up after $attempt attempts: ${error.description}',
+            'delivery gave up after $attempt attempts: ${error.message}',
           );
-          onStatus(task, MatchStatus.failed, error.userMessage);
+          onStatus(task, MatchStatus.failed, error.message);
           return;
         }
 
         _onLog?.call(
-          'forward attempt $attempt failed (${error.description}), '
+          'delivery attempt $attempt failed (${error.message}), '
           'retry in ${backoff.inSeconds}s',
         );
         await Future<void>.delayed(backoff);

@@ -247,12 +247,12 @@ class ServiceBridge extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Asks the service which channels the bot was added to.
-  void discoverTargets(String botToken) {
+  /// Asks the service which channels we are allowed to publish in.
+  void discoverTargets() {
     discoveringTargets = true;
     lastError = null;
     notifyListeners();
-    send(Command(Cmd.botTargets, {'botToken': botToken}));
+    send(Command(Cmd.botTargets));
   }
 
   /// Pushes edited settings to a running engine so they take effect at once.

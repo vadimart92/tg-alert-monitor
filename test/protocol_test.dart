@@ -27,9 +27,9 @@ void main() {
             'keywords': ['шахед'],
           },
         }),
-        Command(Cmd.botCheck, {'botToken': '1:aa', 'targetChatId': '@c'}),
-        Command(Cmd.botTest, {'botToken': '1:aa', 'targetChatId': '-100123'}),
-        Command(Cmd.botTargets, {'botToken': '1:aa'}),
+        Command(Cmd.botCheck, {'targetChatId': '@c'}),
+        Command(Cmd.botTest, {'targetChatId': '-100123'}),
+        Command(Cmd.botTargets),
         Command(Cmd.logGet),
       ];
 
@@ -121,7 +121,6 @@ void main() {
         }),
         Event(Ev.botInfo, {'botName': 'Bot', 'chatTitle': 'Канал'}),
         Event(Ev.botTargets, {
-          'botName': 'Bot',
           'items': [
             {'id': -100123, 'title': 'Тривога', 'isChannel': true},
           ],

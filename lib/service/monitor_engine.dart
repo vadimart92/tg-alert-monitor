@@ -7,7 +7,6 @@ library;
 import 'dart:async';
 import 'dart:collection';
 
-import '../core/bot/bot_api.dart';
 import '../core/bot/forward_queue.dart';
 import '../core/bot/message_formatter.dart';
 import '../core/ipc/protocol.dart';
@@ -109,7 +108,6 @@ class MonitorEngine {
   MonitorEngine({
     required this._client,
     required this._params,
-    required this._botApiFactory,
     required this._matchLog,
     required this._logger,
     required this._emit,
@@ -124,7 +122,7 @@ class MonitorEngine {
        _now = now ?? DateTime.now {
     _matcher = KeywordMatcher(config.keywords);
     _forwardQueue = ForwardQueue(
-      apiProvider: () => _botApiFactory(_config.botToken),
+      deliver: _deliverTask,
       minInterval: forwardInterval,
       onLog: _logger.info,
       onStatus: _onForwardStatus,
@@ -133,7 +131,6 @@ class MonitorEngine {
 
   final TdClient _client;
   final TdlibParams _params;
-  final BotApiFactory _botApiFactory;
   final MatchSink _matchLog;
   final AppLogger _logger;
   final void Function(Event event) _emit;
@@ -160,6 +157,11 @@ class MonitorEngine {
   DateTime? _lastMatchAt;
   int _matchCount = 0;
   String _tdVersion = '';
+  int _myUserId = 0;
+
+  /// Target channel resolved to a TDLib chat id, cached per configured value.
+  int? _targetChatId;
+  String _targetChatIdSource = '';
 
   final List<FolderRef> _folders = <FolderRef>[];
   final Set<int> _folderChatIds = <int>{};
@@ -357,6 +359,7 @@ class MonitorEngine {
       final first = me['first_name'] as String? ?? '';
       final last = me['last_name'] as String? ?? '';
       _userName = [first, last].where((p) => p.isNotEmpty).join(' ');
+      _myUserId = (me['id'] as num?)?.toInt() ?? 0;
       _emitState();
     } catch (error) {
       _logger.warn('getMe failed: $error');
@@ -559,6 +562,7 @@ class MonitorEngine {
         chatId: chatId,
         messageId: messageId,
         targetChatId: _config.targetChatId,
+        tag: MessageFormatter.renderKeywords(keywords),
         html: MessageFormatter.format(
           chatTitle: entry.chatTitle,
           keywords: keywords,
@@ -588,6 +592,150 @@ class MonitorEngine {
       _logger.warn('getMessageLink failed for $chatId/$messageId: $error');
     }
     return fallbackLink(chatId, serverMessageId(messageId));
+  }
+
+  /// Delivers one match to the target channel.
+  ///
+  /// The original is forwarded through the owner's own session, so the post
+  /// keeps its "forwarded from" header and its media instead of being retyped.
+  /// A bot cannot do this: it is not a member of the monitored channels. The
+  /// tag then goes underneath as a separate short message.
+  ///
+  /// Channels published with content protection cannot be forwarded at all, so
+  /// those fall back to the self-contained rendering.
+  Future<void> _deliverTask(ForwardTask task) async {
+    final targetId = await _resolveTargetChat(task.targetChatId);
+
+    try {
+      await _client.send({
+        '@type': 'forwardMessages',
+        'chat_id': targetId,
+        'from_chat_id': task.chatId,
+        'message_ids': [task.messageId],
+        'send_copy': false,
+        'remove_caption': false,
+      }, timeout: const Duration(seconds: 30));
+    } on TdError catch (error) {
+      _logger.warn(
+        'forward of ${task.chatId}/${task.messageId} rejected '
+        '(${error.message}); sending a copy instead',
+      );
+      await _sendText(targetId, task.html, html: true);
+      return;
+    } on TdTimeout {
+      throw DeliveryFailure('TDLib не відповів на пересилання');
+    }
+
+    if (task.tag.isNotEmpty) {
+      // A missing tag is not worth failing (and retrying) the whole match for:
+      // the forwarded original is already delivered.
+      try {
+        await _sendText(targetId, task.tag, html: false);
+      } catch (error) {
+        _logger.warn('tag message failed: $error');
+      }
+    }
+  }
+
+  /// Posts a plain or HTML-ish text message as the owner.
+  Future<void> _sendText(int chatId, String text, {required bool html}) async {
+    // The fallback rendering is HTML for the Bot API; as a user we send plain
+    // text, so strip the few tags we generate rather than showing them raw.
+    final body = html ? MessageFormatter.stripHtml(text) : text;
+    try {
+      await _client.send({
+        '@type': 'sendMessage',
+        'chat_id': chatId,
+        'input_message_content': {
+          '@type': 'inputMessageText',
+          'text': {'@type': 'formattedText', 'text': body},
+          'link_preview_options': {
+            '@type': 'linkPreviewOptions',
+            'is_disabled': true,
+          },
+        },
+      }, timeout: const Duration(seconds: 30));
+    } on TdError catch (error) {
+      throw _deliveryFailureFrom(error);
+    } on TdTimeout {
+      throw DeliveryFailure('TDLib не відповів на надсилання');
+    }
+  }
+
+  /// Resolves the configured target into a TDLib chat id, once per value.
+  Future<int> _resolveTargetChat(String configured) async {
+    final trimmed = configured.trim();
+    if (trimmed.isEmpty) {
+      throw DeliveryFailure('Цільовий чат не задано', isPermanent: true);
+    }
+    final cached = _targetChatId;
+    if (cached != null && _targetChatIdSource == trimmed) return cached;
+
+    try {
+      final int resolved;
+      if (trimmed.startsWith('@')) {
+        final chat = await _client.send({
+          '@type': 'searchPublicChat',
+          'username': trimmed.substring(1),
+        });
+        resolved = (chat['id'] as num?)?.toInt() ?? 0;
+      } else {
+        final numeric = int.tryParse(trimmed);
+        if (numeric == null) {
+          throw DeliveryFailure(
+            'Цільовий чат має бути @username або числовим id',
+            isPermanent: true,
+          );
+        }
+        // Makes sure TDLib knows the chat before we post into it.
+        final chat = await _client.send({
+          '@type': 'getChat',
+          'chat_id': numeric,
+        });
+        resolved = (chat['id'] as num?)?.toInt() ?? numeric;
+      }
+
+      if (resolved == 0) {
+        throw DeliveryFailure('Цільовий чат не знайдено', isPermanent: true);
+      }
+      _targetChatId = resolved;
+      _targetChatIdSource = trimmed;
+      return resolved;
+    } on TdError catch (error) {
+      throw _deliveryFailureFrom(error);
+    } on TdTimeout {
+      throw DeliveryFailure('TDLib не відповів на пошук цільового чату');
+    }
+  }
+
+  /// Maps a TDLib error onto the queue's retry policy.
+  static DeliveryFailure _deliveryFailureFrom(TdError error) {
+    final flood = RegExp(r'FLOOD_WAIT_(\d+)').firstMatch(error.message);
+    if (flood != null) {
+      return DeliveryFailure(
+        error.message,
+        retryAfter: Duration(seconds: int.parse(flood.group(1)!)),
+      );
+    }
+    // 400 covers "chat not found", "message not found", "not enough rights";
+    // 403 is a plain refusal. Retrying cannot fix any of them.
+    final permanent = error.code == 400 || error.code == 403;
+    return DeliveryFailure(_humanTdError(error), isPermanent: permanent);
+  }
+
+  static String _humanTdError(TdError error) {
+    final message = error.message;
+    if (message.contains('CHAT_WRITE_FORBIDDEN') ||
+        message.contains('CHAT_ADMIN_REQUIRED')) {
+      return 'Немає права публікувати в цільовому каналі.';
+    }
+    if (message.contains('CHAT_FORWARDS_RESTRICTED')) {
+      return 'Канал-джерело забороняє пересилання.';
+    }
+    if (message.contains('Chat not found')) {
+      return 'Цільовий чат не знайдено. Перевірте id або @username.';
+    }
+    return message;
   }
 
   void _onForwardStatus(ForwardTask task, MatchStatus status, String? error) {
@@ -631,7 +779,6 @@ class MonitorEngine {
     _config = keepChats ? config.copyWith(chats: _config.chats) : config;
 
     _matcher = KeywordMatcher(_config.keywords);
-    _logger.addSecret(_config.botToken);
     await _saveConfig(_config);
     _logger.info(
       'config updated: ${_config.keywords.length} keywords, '
@@ -653,7 +800,6 @@ class MonitorEngine {
   Future<void> startMonitoring(MonitorConfig config) async {
     _config = config;
     _matcher = KeywordMatcher(config.keywords);
-    _logger.addSecret(config.botToken);
     await _saveConfig(config);
     await _saveMonitoringActive(true);
 
@@ -780,19 +926,15 @@ class MonitorEngine {
         );
 
       case Cmd.botTargets:
-        await _discoverTargets(
-          command.arg<String>('botToken') ?? _config.botToken,
-        );
+        await _discoverTargets();
 
       case Cmd.botCheck:
-        await _checkBot(
-          command.arg<String>('botToken') ?? _config.botToken,
+        await _checkTarget(
           command.arg<String>('targetChatId') ?? _config.targetChatId,
         );
 
       case Cmd.botTest:
         await _testBot(
-          command.arg<String>('botToken') ?? _config.botToken,
           command.arg<String>('targetChatId') ?? _config.targetChatId,
         );
 
@@ -824,71 +966,18 @@ class MonitorEngine {
     }
   }
 
-  Future<void> _checkBot(String token, String targetChatId) async {
-    _logger.addSecret(token);
-    try {
-      final api = _botApiFactory(token);
-      final bot = await api.getMe();
-      final chatTitle = await api.getChat(targetChatId);
-      _emit(
-        Event(Ev.botInfo, {'botName': bot.displayName, 'chatTitle': chatTitle}),
-      );
-      _logger.info('bot check ok');
-    } on BotApiException catch (error) {
-      _logger.warn('bot check failed: ${error.description}');
-      _emit(
-        Event(Ev.error, {
-          'scope': ErrorScope.bot,
-          'code': error.httpStatus ?? 0,
-          'message': error.userMessage,
-        }),
-      );
-    }
-  }
-
   /// Finds channels that can serve as the forwarding target.
   ///
-  /// The Bot API deliberately offers no "list my chats" call, so discovery
-  /// runs through the owner's own TDLib session instead: walk the channels the
-  /// account knows about and ask whether this bot is a member. That works
-  /// regardless of when the bot was added, unlike scraping `getUpdates`, which
-  /// only reaches back 24 hours.
-  ///
-  /// Requires the owner to be an administrator of the channel — otherwise
-  /// Telegram will not answer `getChatMember`, and the channel is skipped.
-  Future<void> _discoverTargets(String token) async {
-    if (_auth != AuthPhase.ready) {
+  /// Delivery happens through the owner's own session, so the question is
+  /// where *they* may publish — every channel they own or administer with the
+  /// right to post. No bot is involved.
+  Future<void> _discoverTargets() async {
+    if (_auth != AuthPhase.ready || _myUserId == 0) {
       _emit(
         Event(Ev.error, {
           'scope': ErrorScope.bot,
           'code': 0,
           'message': 'Спочатку увійдіть у Telegram.',
-        }),
-      );
-      return;
-    }
-
-    _logger.addSecret(token);
-    final BotIdentity bot;
-    try {
-      bot = await _botApiFactory(token).getMe();
-    } on BotApiException catch (error) {
-      _emit(
-        Event(Ev.error, {
-          'scope': ErrorScope.bot,
-          'code': error.httpStatus ?? 0,
-          'message': error.userMessage,
-        }),
-      );
-      return;
-    }
-
-    if (bot.id <= 0) {
-      _emit(
-        Event(Ev.error, {
-          'scope': ErrorScope.bot,
-          'code': 0,
-          'message': 'Не вдалося визначити id бота.',
         }),
       );
       return;
@@ -921,14 +1010,13 @@ class MonitorEngine {
           final member = await _client.send({
             '@type': 'getChatMember',
             'chat_id': chatId,
-            'member_id': {'@type': 'messageSenderUser', 'user_id': bot.id},
+            'member_id': {'@type': 'messageSenderUser', 'user_id': _myUserId},
           }, timeout: const Duration(seconds: 10));
-          if (!_botCanPost(member)) continue;
+          if (!_canPost(member)) continue;
           targets.add(
             ChatRef(id: chatId, title: chatTitle(chat), isChannel: true),
           );
         } on TdError {
-          // Not an admin of this channel, or the bot is not in it.
           continue;
         } on TdTimeout {
           continue;
@@ -949,46 +1037,98 @@ class MonitorEngine {
     _logger.info('target discovery found ${targets.length} channels');
     _emit(
       Event(Ev.botTargets, {
-        'botName': bot.displayName,
         'items': [for (final target in targets) target.toJson()],
       }),
     );
   }
 
-  /// True when the bot is in the chat and allowed to publish there.
-  static bool _botCanPost(Map<String, dynamic> member) {
+  /// True when this member may publish in the channel.
+  static bool _canPost(Map<String, dynamic> member) {
     final status = member['status'];
     if (status is! Map) return false;
     return switch (status['@type']) {
       'chatMemberStatusCreator' => true,
       'chatMemberStatusAdministrator' =>
-        (status['rights'] is Map &&
-            (status['rights'] as Map)['can_post_messages'] == true),
+        status['rights'] is Map &&
+            (status['rights'] as Map)['can_post_messages'] == true,
       // A plain member of a channel cannot post; anything else is left/banned.
       _ => false,
     };
   }
 
-  Future<void> _testBot(String token, String targetChatId) async {
-    _logger.addSecret(token);
+  /// Posts a test message down the same path a real alert takes, so this
+  /// button verifies what actually matters: that we can publish in the target.
+  Future<void> _testBot(String targetChatId) async {
+    if (_auth != AuthPhase.ready) {
+      _emit(
+        Event(Ev.error, {
+          'scope': ErrorScope.bot,
+          'code': 0,
+          'message': 'Спочатку увійдіть у Telegram.',
+        }),
+      );
+      return;
+    }
+
     final now = _now();
     final stamp =
         '${now.year}-${_two(now.month)}-${_two(now.day)} '
         '${_two(now.hour)}:${_two(now.minute)}';
     try {
-      await _botApiFactory(token).sendMessage(
-        chatId: targetChatId,
-        html: '✅ TG Alert Monitor: тест, $stamp',
+      final targetId = await _resolveTargetChat(targetChatId);
+      await _sendText(
+        targetId,
+        '✅ TG Alert Monitor: тест, $stamp',
+        html: false,
       );
       _logger.info('test message sent');
       _emit(Event(Ev.botInfo, {'botName': '', 'chatTitle': 'Тест надіслано'}));
-    } on BotApiException catch (error) {
-      _logger.warn('test message failed: ${error.description}');
+    } on DeliveryFailure catch (error) {
+      _logger.warn('test message failed: ${error.message}');
       _emit(
         Event(Ev.error, {
           'scope': ErrorScope.bot,
-          'code': error.httpStatus ?? 0,
-          'message': error.userMessage,
+          'code': 0,
+          'message': error.message,
+        }),
+      );
+    }
+  }
+
+  /// Confirms the target channel is reachable and names it.
+  Future<void> _checkTarget(String targetChatId) async {
+    if (_auth != AuthPhase.ready) {
+      _emit(
+        Event(Ev.error, {
+          'scope': ErrorScope.bot,
+          'code': 0,
+          'message': 'Спочатку увійдіть у Telegram.',
+        }),
+      );
+      return;
+    }
+    try {
+      final targetId = await _resolveTargetChat(targetChatId);
+      final chat = await _client.send({
+        '@type': 'getChat',
+        'chat_id': targetId,
+      });
+      _emit(Event(Ev.botInfo, {'botName': '', 'chatTitle': chatTitle(chat)}));
+      _logger.info('target chat check ok');
+    } on DeliveryFailure catch (error) {
+      _emit(
+        Event(Ev.error, {
+          'scope': ErrorScope.bot,
+          'code': 0,
+          'message': error.message,
+        }),
+      );
+    } on TdError catch (error) {
+      _emit(
+        Event(Ev.error, {
+          'scope': ErrorScope.bot,
+          'code': error.code,
+          'message': _humanTdError(error),
         }),
       );
     }

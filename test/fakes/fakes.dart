@@ -4,7 +4,6 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:tg_alert_monitor/core/bot/bot_api.dart';
 import 'package:tg_alert_monitor/core/model/match_entry.dart';
 import 'package:tg_alert_monitor/core/storage/match_log.dart';
 import 'package:tg_alert_monitor/core/td/td_transport.dart';
@@ -75,56 +74,6 @@ class FakeTdTransport implements TdTransport {
   Future<void> close() async {
     closed = true;
     await _controller.close();
-  }
-}
-
-/// Records Bot API traffic and can be told to fail.
-class FakeBotApi implements BotApi {
-  FakeBotApi({
-    this.botId = 424242,
-    this.botName = 'Test Bot',
-    this.chatTitle = 'Target',
-  });
-
-  final int botId;
-  final String botName;
-  final String chatTitle;
-
-  final List<({String chatId, String html})> sentMessages =
-      <({String chatId, String html})>[];
-
-  /// When set, [sendMessage] throws this instead of recording.
-  BotApiException? sendError;
-  BotApiException? getMeError;
-  BotApiException? getChatError;
-
-  int getMeCalls = 0;
-  int getChatCalls = 0;
-
-  @override
-  Future<BotIdentity> getMe() async {
-    getMeCalls++;
-    final error = getMeError;
-    if (error != null) throw error;
-    return BotIdentity(id: botId, name: botName);
-  }
-
-  @override
-  Future<String> getChat(String chatId) async {
-    getChatCalls++;
-    final error = getChatError;
-    if (error != null) throw error;
-    return chatTitle;
-  }
-
-  @override
-  Future<void> sendMessage({
-    required String chatId,
-    required String html,
-  }) async {
-    final error = sendError;
-    if (error != null) throw error;
-    sentMessages.add((chatId: chatId, html: html));
   }
 }
 

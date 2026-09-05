@@ -128,5 +128,19 @@ class MessageFormatter {
     return '$header$body$ellipsis$footer';
   }
 
+  static final RegExp _anchorTag = RegExp(r'<a href="([^"]*)">([^<]*)</a>');
+  static final RegExp _otherTags = RegExp(r'</?[a-zA-Z]+>');
+
+  /// Converts our own HTML rendering back to plain text.
+  ///
+  /// Used when the copy is posted through the user session rather than a bot,
+  /// where the text is sent unformatted and raw tags would be visible.
+  static String stripHtml(String html) => html
+      .replaceAllMapped(_anchorTag, (m) => '${m[2]}: ${m[1]}')
+      .replaceAll(_otherTags, '')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&amp;', '&');
+
   static int _min(int a, int b) => a < b ? a : b;
 }
