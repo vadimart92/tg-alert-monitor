@@ -21,6 +21,7 @@ void main() {
     expect(config.folderId, isNull);
     expect(config.keywords, isEmpty);
     expect(config.maxAgeMinutes, MonitorConfig.defaultMaxAgeMinutes);
+    expect(config.delivery, AlertDelivery.forward);
     expect(config.isRunnable, isFalse);
   });
 
@@ -36,6 +37,7 @@ void main() {
         ChatRef(id: -100111, title: 'Канал А', isChannel: true),
         ChatRef(id: -100222, title: 'Група Б'),
       ],
+      delivery: AlertDelivery.both,
     );
 
     await store.writeConfig(config);
@@ -47,7 +49,37 @@ void main() {
     expect(restored.targetChatId, '-1001234567890');
     expect(restored.maxAgeMinutes, 25);
     expect(restored.chats, config.chats);
+    expect(restored.delivery, AlertDelivery.both);
     expect(restored.isRunnable, isTrue);
+  });
+
+  test('«Локально» is runnable without a target channel', () async {
+    final store = await openWith({});
+    const config = MonitorConfig(
+      folderId: 7,
+      keywords: ['шахед'],
+      delivery: AlertDelivery.local,
+    );
+
+    await store.writeConfig(config);
+    final restored = store.readConfig();
+
+    expect(restored.delivery, AlertDelivery.local);
+    expect(restored.targetChatId, isEmpty);
+    expect(restored.isRunnable, isTrue);
+    // The same config with forwarding switched back on is not.
+    expect(
+      restored.copyWith(delivery: AlertDelivery.forward).isRunnable,
+      isFalse,
+    );
+  });
+
+  test('an unknown delivery mode falls back to forwarding', () async {
+    final store = await openWith({
+      SettingsStore.keyAlertDelivery: 'telepathy',
+    });
+
+    expect(store.readConfig().delivery, AlertDelivery.forward);
   });
 
   test('keywords are de-duplicated case-insensitively on write', () async {

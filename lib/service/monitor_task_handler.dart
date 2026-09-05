@@ -19,6 +19,7 @@ import '../core/td/td_client.dart';
 import '../core/td/td_native.dart';
 import '../core/td/td_transport.dart';
 import '../core/util/app_logger.dart';
+import 'alert_notifier.dart';
 import 'monitor_engine.dart';
 
 /// Service entry point. Must stay top level and annotated.
@@ -35,6 +36,7 @@ class MonitorTaskHandler extends TaskHandler {
 
   AppLogger? _logger;
   MatchLog? _matchLog;
+  AlertNotifier? _notifier;
   TdClient? _client;
   MonitorEngine? _engine;
 
@@ -103,6 +105,16 @@ class MonitorTaskHandler extends TaskHandler {
 
     final config = settings.readConfig();
 
+    // The alert channel is registered up front so its sound is in place before
+    // the first match, and so a permission problem shows up in the log now.
+    // Survives a TDLib restart: the channel only has to be created once.
+    final notifier = _notifier ??= AlertNotifier(onLog: logger.warn);
+    unawaited(
+      notifier.init().catchError(
+        (Object error) => logger.warn('alert channel setup failed: $error'),
+      ),
+    );
+
     // Prove the native library loads before anything depends on it: a missing
     // or unusable libtdjson.so must be visible in the log immediately, not
     // only once the owner has entered credentials.
@@ -143,6 +155,7 @@ class MonitorTaskHandler extends TaskHandler {
         await settings.writeConfig(updated);
       },
       saveMonitoringActive: settings.setMonitoringActive,
+      alert: notifier.notify,
     );
     engine.onClientDead = () => unawaited(_restartClient());
     _engine = engine;

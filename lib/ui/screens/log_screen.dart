@@ -6,7 +6,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/bot/message_formatter.dart';
 import '../../core/ipc/protocol.dart';
 import '../../core/model/match_entry.dart';
 import '../../core/storage/match_log.dart';
@@ -80,6 +82,34 @@ class _LogScreenState extends State<LogScreen> {
     );
   }
 
+  /// Hands the message link to Telegram.
+  ///
+  /// `t.me` links are claimed by the Telegram app, so this lands on the post
+  /// itself; without the app installed the browser opens the web version.
+  Future<void> _open(MatchEntry entry) async {
+    final uri = Uri.tryParse(entry.link);
+    var opened = false;
+    if (uri != null) {
+      try {
+        opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        opened = false;
+      }
+    }
+    if (opened || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Не вдалося відкрити посилання')),
+    );
+  }
+
+  Future<void> _copy(MatchEntry entry) async {
+    await Clipboard.setData(ClipboardData(text: entry.link));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Скопійовано: ${entry.link}')),
+    );
+  }
+
   Widget _matchesTab(List<MatchEntry> matches) {
     if (matches.isEmpty) {
       return const Center(child: Text('Збігів ще не було'));
@@ -105,7 +135,12 @@ class _LogScreenState extends State<LogScreen> {
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('🔑 ${entry.keywords.join(', ')}'),
+              // The tags no longer travel with the forward, so this is the
+              // only place the matched keywords are shown.
+              Text(
+                MessageFormatter.renderKeywords(entry.keywords),
+                style: TextStyle(color: Theme.of(context).colorScheme.primary),
+              ),
               Text(preview),
               if (entry.status == MatchStatus.failed && entry.error != null)
                 Text(
@@ -118,15 +153,8 @@ class _LogScreenState extends State<LogScreen> {
             ],
           ),
           isThreeLine: true,
-          onTap: entry.link.isEmpty
-              ? null
-              : () async {
-                  await Clipboard.setData(ClipboardData(text: entry.link));
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Скопійовано: ${entry.link}')),
-                  );
-                },
+          onTap: entry.link.isEmpty ? null : () => _open(entry),
+          onLongPress: entry.link.isEmpty ? null : () => _copy(entry),
         );
       },
     );
