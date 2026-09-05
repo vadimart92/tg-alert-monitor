@@ -26,11 +26,32 @@ void main() {
       ]);
     });
 
-    test('a stem keyword matches declined forms of a place name', () {
-      // "Дрони" is not a substring of "Дронами": the owner configures the
-      // stem, exactly as decision R7 assumes.
-      expect(KeywordMatcher(['Дрони']).match('над Дронами'), isEmpty);
+    test('a place name typed in full still matches its declined forms', () {
+      // The keyword is reduced to a stem, so the owner does not have to know
+      // that "Дрони" is not a substring of "Дронами".
+      expect(KeywordMatcher(['Дрони']).match('над Дронами'), ['Дрони']);
       expect(KeywordMatcher(['Дрон']).match('над Дронами'), ['Дрон']);
+    });
+
+    test('covers the cases an alert channel actually writes', () {
+      final matcher = KeywordMatcher(['Зенітка', 'Ставка']);
+      const texts = [
+        'Ціль курсом на Зенітку',
+        'Вибухи у Зенітці',
+        'Над Зеніткою БпЛА',
+        'Зенітка, укриття',
+      ];
+      for (final text in texts) {
+        expect(matcher.match(text), ['Зенітка'], reason: text);
+      }
+      expect(matcher.match('Вибух у Ставці'), ['Ставка']);
+      expect(matcher.match('Ціль на Ставку'), ['Ставка']);
+    });
+
+    test('the reported keyword is the one the owner typed, not the stem', () {
+      expect(KeywordMatcher(['Зенітка']).match('на Зенітку'), [
+        'Зенітка',
+      ]);
     });
 
     test('no keywords means no match', () {
@@ -71,6 +92,82 @@ void main() {
     test('exclusions alone never produce a match', () {
       expect(KeywordMatcher(['-відбій']).match('відбій'), isEmpty);
       expect(KeywordMatcher(['-відбій']).isEmpty, isTrue);
+    });
+  });
+
+  group('KeywordMatcher.stemOf', () {
+    test('cuts a trailing inflectional vowel', () {
+      expect(KeywordMatcher.stemOf('ракета'), 'ракет');
+      expect(KeywordMatcher.stemOf('Дрони'), 'дрон');
+      expect(KeywordMatcher.stemOf('Сила'), 'сил');
+    });
+
+    test('also cuts к/г/х, which alternate in the locative case', () {
+      // Зенітка -> у Зенітці, Ставка -> у Ставці.
+      expect(KeywordMatcher.stemOf('Зенітка'), 'зеніт');
+      expect(KeywordMatcher.stemOf('Ставка'), 'став');
+    });
+
+    test('leaves a keyword that already ends in a consonant alone', () {
+      for (final keyword in [
+        'шахед',
+        'дрон',
+        'Київ',
+        'танк',
+        'ціль',
+        'вибух',
+      ]) {
+        expect(
+          KeywordMatcher.stemOf(keyword),
+          KeywordMatcher.normalize(keyword),
+          reason: keyword,
+        );
+      }
+    });
+
+    test('typing the stem yourself always wins over the automatic guess', () {
+      // "перемог" ends in a consonant, so no ending was removed and the
+      // alternation rule never fires.
+      expect(KeywordMatcher.stemOf('перемог'), 'перемог');
+    });
+
+    test('trims adjective endings', () {
+      expect(KeywordMatcher.stemOf('балістичний'), 'балістичн');
+      expect(KeywordMatcher.stemOf('балістичній'), 'балістичн');
+      expect(KeywordMatcher(['балістичний']).match('балістична ракета'), [
+        'балістичний',
+      ]);
+    });
+
+    test('never touches a multi-word phrase', () {
+      expect(KeywordMatcher.stemOf('балістика на'), 'балістика на');
+      expect(
+        KeywordMatcher(['балістика на']).match('увага балістика\nна Київ'),
+        ['балістика на'],
+      );
+    });
+
+    test('refuses to stem down to something that matches everything', () {
+      // Nothing is cut when too little would be left.
+      expect(KeywordMatcher.stemOf('оса'), 'оса');
+      expect(KeywordMatcher.stemOf('ті'), 'ті');
+    });
+
+    test(
+      'isStemmed reports whether the search term differs from the input',
+      () {
+        expect(KeywordMatcher.isStemmed('Зенітка'), isTrue);
+        expect(KeywordMatcher.isStemmed('шахед'), isFalse);
+        expect(KeywordMatcher.isStemmed('балістика на'), isFalse);
+      },
+    );
+
+    test('exclusions are stemmed the same way', () {
+      final matcher = KeywordMatcher(['шахед', '-збито']);
+      expect(matcher.match('шахед над містом'), ['шахед']);
+      // "збито" -> "збит", so declined forms suppress the alert too.
+      expect(matcher.match('шахед збитий над містом'), isEmpty);
+      expect(matcher.match('збита ціль, шахед'), isEmpty);
     });
   });
 

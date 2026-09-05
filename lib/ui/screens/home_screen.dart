@@ -26,6 +26,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _keywordController = TextEditingController();
+  final _exclusionController = TextEditingController();
 
   late MonitorConfig _config;
   bool _notificationsGranted = true;
@@ -47,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _keywordController.dispose();
+    _exclusionController.dispose();
     super.dispose();
   }
 
@@ -85,17 +87,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     widget.bridge.pushConfig(config);
   }
 
-  void _addKeyword() {
-    final raw = _keywordController.text.trim();
+  /// Stored as one list; an entry prefixed with `-` is an exclusion.
+  List<String> get _includes => [
+    for (final keyword in _config.keywords)
+      if (!keyword.startsWith(exclusionPrefix)) keyword,
+  ];
+
+  List<String> get _exclusions => [
+    for (final keyword in _config.keywords)
+      if (keyword.startsWith(exclusionPrefix) && keyword.length > 1)
+        keyword.substring(1),
+  ];
+
+  void _addKeyword({required bool isExclusion}) {
+    final controller = isExclusion ? _exclusionController : _keywordController;
+    final raw = controller.text.trim();
     if (raw.isEmpty) return;
-    final merged = KeywordMatcher.sanitize([..._config.keywords, raw]);
-    _keywordController.clear();
+    final entry = isExclusion ? '$exclusionPrefix$raw' : raw;
+    final merged = KeywordMatcher.sanitize([..._config.keywords, entry]);
+    controller.clear();
     _persist(_config.copyWith(keywords: merged));
   }
 
-  void _removeKeyword(String keyword) => _persist(
-    _config.copyWith(keywords: [..._config.keywords]..remove(keyword)),
-  );
+  void _removeKeyword(String keyword, {required bool isExclusion}) {
+    final entry = isExclusion ? '$exclusionPrefix$keyword' : keyword;
+    _persist(_config.copyWith(keywords: [..._config.keywords]..remove(entry)));
+  }
 
   bool get _canStart =>
       widget.bridge.isReady && _config.isRunnable && _notificationsGranted;
@@ -314,48 +331,133 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Ключові слова', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              for (final keyword in _config.keywords)
-                Chip(
-                  label: Text(keyword),
-                  onDeleted: () => _removeKeyword(keyword),
-                ),
-            ],
+          const SizedBox(height: 4),
+          const Text(
+            'Повідомлення пересилається, якщо містить хоча б одне з цих слів.',
+            style: TextStyle(fontSize: 12),
           ),
           const SizedBox(height: 8),
+          _chips(_includes, isExclusion: false),
+          _addRow(
+            controller: _keywordController,
+            hint: 'Напр. Зенітка',
+            isExclusion: false,
+          ),
+          if (_includes.any(KeywordMatcher.isStemmed)) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Сірим показано корінь, за яким шукаємо: він покриває відмінки '
+              '(«на Зенітку», «у Зенітці»). Щоб задати корінь самому, '
+              'введіть слово, що закінчується на приголосну.',
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).hintColor,
+              ),
+            ),
+          ],
+          const Divider(height: 28),
           Row(
             children: [
-              Expanded(
-                child: TextField(
-                  controller: _keywordController,
-                  decoration: const InputDecoration(
-                    labelText: 'Нове слово',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  onSubmitted: (_) => _addKeyword(),
-                ),
+              Icon(
+                Icons.block,
+                size: 18,
+                color: Theme.of(context).colorScheme.error,
               ),
-              IconButton(
-                icon: const Icon(Icons.add_circle),
-                onPressed: _addKeyword,
+              const SizedBox(width: 6),
+              Text(
+                'Слова-винятки',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
             ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Якщо повідомлення містить таке слово, воно НЕ пересилається — '
+            'навіть якщо ключове слово теж є. Напр. «відбій», «збито».',
+            style: TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          _chips(_exclusions, isExclusion: true),
+          _addRow(
+            controller: _exclusionController,
+            hint: 'Напр. відбій',
+            isExclusion: true,
           ),
         ],
       ),
     ),
   );
 
+  /// Chips for one of the two lists; the grey suffix is the stem actually
+  /// searched for, so an automatic guess is never invisible.
+  Widget _chips(List<String> keywords, {required bool isExclusion}) {
+    if (keywords.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+          isExclusion ? 'Винятків немає' : 'Слів ще немає',
+          style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+        ),
+      );
+    }
+    final scheme = Theme.of(context).colorScheme;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: [
+        for (final keyword in keywords)
+          Chip(
+            backgroundColor: isExclusion ? scheme.errorContainer : null,
+            label: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(keyword),
+                if (KeywordMatcher.isStemmed(keyword))
+                  Text(
+                    ' · ${KeywordMatcher.stemOf(keyword)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).hintColor,
+                    ),
+                  ),
+              ],
+            ),
+            onDeleted: () => _removeKeyword(keyword, isExclusion: isExclusion),
+          ),
+      ],
+    );
+  }
+
+  Widget _addRow({
+    required TextEditingController controller,
+    required String hint,
+    required bool isExclusion,
+  }) => Row(
+    children: [
+      Expanded(
+        child: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            labelText: isExclusion ? 'Новий виняток' : 'Нове слово',
+            hintText: hint,
+            border: const OutlineInputBorder(),
+            isDense: true,
+          ),
+          onSubmitted: (_) => _addKeyword(isExclusion: isExclusion),
+        ),
+      ),
+      IconButton(
+        icon: const Icon(Icons.add_circle),
+        onPressed: () => _addKeyword(isExclusion: isExclusion),
+      ),
+    ],
+  );
+
   Widget _startStopCard(ServiceBridge bridge) {
     final reasons = <String>[
       if (!bridge.isReady) 'потрібен вхід у Telegram',
       if (_config.folderId == null) 'не вибрано папку',
-      if (_config.keywords.isEmpty) 'немає ключових слів',
+      if (_includes.isEmpty) 'немає ключових слів',
       if (_config.botToken.isEmpty || _config.targetChatId.isEmpty)
         'не заповнені токен бота і цільовий чат',
       if (!_notificationsGranted) 'не надано дозвіл на сповіщення',
