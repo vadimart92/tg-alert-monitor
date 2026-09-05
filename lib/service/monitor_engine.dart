@@ -661,20 +661,30 @@ class MonitorEngine {
 
   Future<String> _messageLink(int chatId, int messageId) async {
     try {
+      // Only the two fields every version of the schema agrees on. The
+      // optional ones differ between TDLib releases and one of them is typed
+      // as a string somewhere in 1.8.65 — sending it as a number made every
+      // single call fail with "Expected String, but receive Number", which
+      // silently dropped every alert onto the private-link fallback below.
+      // Omitted fields are defaulted by TDLib, which is what we wanted anyway.
       final response = await _client.send({
         '@type': 'getMessageLink',
         'chat_id': chatId,
         'message_id': messageId,
-        'media_timestamp': 0,
-        'checklist_task_id': 0,
-        'poll_option_id': 0,
-        'for_album': false,
-        'in_message_thread': false,
       }, timeout: const Duration(seconds: 10));
       final link = response['link'];
       if (link is String && link.isNotEmpty) return link;
     } catch (error) {
       _logger.warn('getMessageLink failed for $chatId/$messageId: $error');
+    }
+
+    // A public channel has a username, and `t.me/<username>/<id>` is a link
+    // Telegram will render a preview for. The `t.me/c/...` form below never
+    // gets one, so falling straight to it would quietly cost every alert its
+    // preview whenever getMessageLink is unavailable.
+    final username = await _usernameOf(chatId);
+    if (username.isNotEmpty) {
+      return 'https://t.me/$username/${serverMessageId(messageId)}';
     }
     return fallbackLink(chatId, serverMessageId(messageId));
   }

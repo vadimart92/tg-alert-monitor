@@ -119,17 +119,24 @@ The «Notifications» card on the home screen:
 The switch takes effect immediately — you can flip it while monitoring is
 running.
 
-The siren is `assets/siren_ostap_calm.ogg`. Android itself plays it, as the
-sound of the "keyword matches" notification channel, with alarm audio
-attributes — so it plays on the alarm stream and a silenced ringer does not mute
-it. Do Not Disturb still does; bypassing that needs a permission you would have
-to grant by hand. The alert is coloured red and marked as an alarm. Volume,
-vibration and importance can be changed in that channel's system settings.
+The siren is `assets/siren_ostap_calm.ogg`, and **the app plays it itself**, on
+the alarm stream — no ringer mode mutes that. Letting the notification channel
+carry the sound is tidier and does work, but only while the phone is not
+silenced: measured on a Galaxy S10, with the channel set exactly as intended
+and the alarm stream unmuted, One UI still refuses to sound a notification in
+Mute mode. That refusal sits above the channel, so the app goes around it.
+
+The notification itself is therefore silent, coloured red and marked as an
+alarm. If playback ever fails, the alert falls back to a second, sounding
+channel — a siren the vendor might suppress still beats no siren.
+
+Do Not Disturb silences it either way; bypassing that needs a permission you
+would have to grant by hand, and the app does not ask for it.
 
 A notification channel's sound and importance are frozen when Android first
 creates it, so changing them in the app has no effect on an install that
-already has the channel. When they genuinely have to change, the channel id is
-versioned (`tg_alert_matches_v2`) and the old one deleted.
+already has the channel. When they have to change, the channel id is versioned
+and the old one deleted.
 
 ## Who posts the alert: you, or a bot
 
