@@ -124,6 +124,25 @@ sound of the "keyword matches" notification channel, with alarm audio
 attributes — so it is audible even with the phone on silent. Volume, vibration
 and importance can be changed in that channel's system settings.
 
+## Who posts the alert: you, or a bot
+
+By default the app forwards the original **as you**, through your own Telegram
+session. That keeps the "Forwarded from" header and the media, and needs no bot
+at all.
+
+It has one consequence worth knowing: **a message you send never notifies your
+own other devices.** If you are watching the target channel from a second phone,
+your own forwards arrive there silently.
+
+Setting a **bot token** in the settings fixes that. A bot is a different sender,
+so its post raises a normal notification on your phones. A bot cannot forward
+from channels it is not in, so in this mode the alert is a rendered message —
+the tags, the text, and a link back to the original — rather than a forward.
+
+Get the token from @BotFather and add the bot as an administrator of the target
+channel with the "Post messages" right. Leave the field empty to keep
+forwarding as yourself.
+
 ## What a forward looks like
 
 The original goes across as a real forward: with the "Forwarded from <channel>"
@@ -154,6 +173,20 @@ the sharing screen so you know to add them by hand.
 The code carries channel usernames, keywords, the folder name and the maximum
 message age. It carries no credentials: `api_id`, `api_hash` and the Telegram
 session stay on their own phone.
+
+## Diagnostics
+
+The ⧉ menu → «Diagnostics», for when a keyword was posted and nothing happened:
+
+* **What is being watched** — whether monitoring is actually on, and which
+  chats the engine currently holds. The chat list is re-resolved every half
+  hour, so a channel added to the folder a minute ago is not watched yet;
+  «Refresh the chat list» does it now.
+* **Try some text** — runs the real matcher over pasted text and says which
+  keyword fired, or that an exclusion word blocked it.
+* **Test the siren** — fires a local notification through the real notifier.
+* **Test delivery** — takes the newest message from a watched chat and sends it
+  down exactly the path a real alert takes, forward or bot.
 
 ## Journal
 

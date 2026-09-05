@@ -37,6 +37,18 @@ abstract interface class EngineStrings {
   String get testMessageSent;
 
   String get setupNothingResolved;
+
+  String get botUnavailable;
+
+  /// Name of the notification channel the siren belongs to, quoted back at
+  /// the owner when a test notification does not show up.
+  String get matchChannelName;
+  String get diagAlertTitle;
+  String get diagAlertBody;
+  String diagAlertFired(String channel);
+  String get diagNoChats;
+  String get diagNoMessages;
+  String diagForwarded(String chat);
 }
 
 /// Ukrainian, hard-coded. The engine's default, and what the tests assert on.
@@ -103,4 +115,28 @@ class UkrainianEngineStrings implements EngineStrings {
   String get setupNothingResolved =>
       'Жоден канал з коду не вдалося відкрити. '
       'Перевірте мережу і спробуйте ще раз.';
+
+  @override
+  String get botUnavailable => 'Бот недоступний у цьому процесі';
+  @override
+  String get matchChannelName => 'Збіги за ключовими словами';
+  @override
+  String get diagAlertTitle => 'Перевірка сирени';
+  @override
+  String get diagAlertBody =>
+      'Якщо ви це бачите і чуєте — локальні сповіщення працюють.';
+  @override
+  String diagAlertFired(String channel) =>
+      'Сповіщення надіслано. Якщо його не видно — перевірте дозвіл на '
+      'сповіщення і канал «$channel» у системних налаштуваннях.';
+  @override
+  String get diagNoChats =>
+      'Жодного чату не відстежується. Виберіть папку і натисніть '
+      '«Оновити список чатів».';
+  @override
+  String get diagNoMessages =>
+      'У відстежуваних чатах немає текстових повідомлень.';
+  @override
+  String diagForwarded(String chat) =>
+      'Доставлено з «$chat». Перевірте цільовий канал.';
 }

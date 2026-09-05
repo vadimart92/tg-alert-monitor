@@ -225,5 +225,61 @@
   },
   "setupFailed": "Could not do: {titles}",
   "openMyTelegram": "Open my.telegram.org",
-  "apiCredentialsSteps": "On that page, sign in with your phone number (the code arrives in Telegram) → \"API development tools\" → fill in any application name → you get api_id and api_hash. Copy them here."
+  "apiCredentialsSteps": "On that page, sign in with your phone number (the code arrives in Telegram) → \"API development tools\" → fill in any application name → you get api_id and api_hash. Copy them here.",
+
+  "botUnavailable": "The bot is unavailable in this process",
+  "diagAlertTitle": "Siren check",
+  "diagAlertBody": "If you can see and hear this, local notifications work.",
+  "diagAlertFired": "Notification sent. If you cannot see it, check the notification permission and the «{channel}» channel in the system settings.",
+  "@diagAlertFired": {
+    "placeholders": {
+      "channel": {"type": "String"}
+    }
+  },
+  "diagNoChats": "No chats are being watched. Pick a folder and hit \"Refresh the chat list\".",
+  "diagNoMessages": "The watched chats hold no text messages.",
+  "diagForwarded": "Delivered from «{chat}». Check the target channel.",
+  "@diagForwarded": {
+    "placeholders": {
+      "chat": {"type": "String"}
+    }
+  },
+
+  "diagnostics": "Diagnostics",
+  "diagWhatIsWatched": "What is being watched",
+  "diagMonitoringOn": "Monitoring is on",
+  "diagMonitoringOff": "Monitoring is off — nothing will fire until you hit Start",
+  "diagWatchedChats": "Chats under watch: {count}",
+  "@diagWatchedChats": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "diagRefreshChats": "Refresh the chat list",
+  "diagNeverRefreshed": "the list has never been refreshed",
+  "diagRefreshedAt": "refreshed at {time}",
+  "@diagRefreshedAt": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "diagFolderHint": "A channel added to the folder just now comes under watch only after the list is refreshed — which is why this button is here.",
+  "diagTryText": "Try some text",
+  "diagTryTextHint": "Paste a message here",
+  "diagMatched": "Would fire on: {keywords}",
+  "@diagMatched": {
+    "placeholders": {
+      "keywords": {"type": "String"}
+    }
+  },
+  "diagNotMatched": "Would not fire: no keyword found.",
+  "diagExcluded": "Blocked by an exclusion word.",
+  "diagTestAlert": "Test the siren",
+  "diagTestForward": "Test delivery",
+  "diagTestForwardHint": "Takes the newest message from the watched chats and sends it down exactly the path a real alert takes.",
+
+  "botToken": "Bot token (optional)",
+  "botTokenHelp": "Empty — you forward the original yourself. With a token — a bot posts links and tags.",
+  "botWhyHelp": "A message you send never notifies your own other devices, which is why your own forward is invisible on a second phone. A bot is a different sender, so its post arrives as a normal notification. @BotFather issues the token; the bot has to be an administrator of the target channel.",
+  "botTokenInvalid": "That does not look like a token: 123456:AA… is expected"
 }

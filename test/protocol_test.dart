@@ -42,6 +42,9 @@ void main() {
             'a': 10,
           },
         }),
+        Command(Cmd.diagAlert),
+        Command(Cmd.diagForward),
+        Command(Cmd.diagState),
       ];
 
       // Guards against a command being added to Cmd.all but not covered here.
@@ -161,6 +164,19 @@ void main() {
           'failed': ['@gone'],
           'folderId': 42,
         }),
+        Event(Ev.diagState, {
+          'monitoring': true,
+          'auth': 'ready',
+          'connection': 'ready',
+          'folderId': 7,
+          'watching': [
+            {'id': -100123, 'title': 'Канал'},
+          ],
+          'lastFolderRefresh': '2026-09-05T07:00:00.000',
+          'usesBot': false,
+          'delivery': 'forward',
+        }),
+        Event(Ev.diagResult, {'ok': true, 'message': 'Готово'}),
       ];
 
       expect(samples.map((e) => e.ev).toSet(), Ev.all);

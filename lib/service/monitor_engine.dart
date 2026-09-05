@@ -7,6 +7,7 @@ library;
 import 'dart:async';
 import 'dart:collection';
 
+import '../core/bot/bot_api.dart';
 import '../core/bot/forward_queue.dart';
 import '../core/bot/message_formatter.dart';
 import '../core/ipc/protocol.dart';
@@ -125,6 +126,7 @@ class MonitorEngine {
     this.connectionStallTimeout = const Duration(minutes: 2),
     Duration forwardInterval = const Duration(milliseconds: 1500),
     this._alert,
+    this._botApi,
     EngineStrings strings = const UkrainianEngineStrings(),
   }) : _config = config,
        _s = strings,
@@ -146,6 +148,9 @@ class MonitorEngine {
   final Future<void> Function(MonitorConfig config) _saveConfig;
   final Future<void> Function(bool active) _saveMonitoringActive;
   final LocalAlert? _alert;
+
+  /// Builds a Bot API client for a token. Null in tests that do not need one.
+  final BotApiFactory? _botApi;
   final EngineStrings _s;
   final DateTime Function() _now;
 
@@ -529,7 +534,13 @@ class MonitorEngine {
 
     final chatId = (message['chat_id'] as num?)?.toInt();
     if (chatId == null || !_folderChatIds.contains(chatId)) return;
-    if (message['is_outgoing'] == true) return;
+
+    // Only what we put into the target channel is ignored, and only to stop a
+    // delivery loop. An outgoing message anywhere else is a real match: TDLib
+    // marks a post as outgoing when the owner made it, so a channel the owner
+    // runs themselves — the obvious way to test the app — would otherwise
+    // never trigger anything at all.
+    if (message['is_outgoing'] == true && _isTargetChat(chatId)) return;
 
     final text = extractText(message['content']);
     if (text == null || text.isEmpty) return;
@@ -618,6 +629,17 @@ class MonitorEngine {
     }
   }
 
+  /// True when [chatId] is where this app publishes.
+  ///
+  /// The resolved id is only known once something has been delivered, so the
+  /// configured value is checked too — otherwise the very first alert could
+  /// echo before the cache was warm.
+  bool _isTargetChat(int chatId) {
+    if (_targetChatId == chatId) return true;
+    final configured = _config.targetChatId.trim();
+    return configured.isNotEmpty && int.tryParse(configured) == chatId;
+  }
+
   Future<String> _messageLink(int chatId, int messageId) async {
     try {
       final response = await _client.send({
@@ -651,6 +673,11 @@ class MonitorEngine {
   /// Channels published with content protection cannot be forwarded at all, so
   /// those fall back to the self-contained rendering.
   Future<void> _deliverTask(ForwardTask task) async {
+    if (_config.usesBot) {
+      await _deliverThroughBot(task);
+      return;
+    }
+
     final targetId = await _resolveTargetChat(task.targetChatId);
 
     try {
@@ -671,6 +698,36 @@ class MonitorEngine {
       return;
     } on TdTimeout {
       throw DeliveryFailure(_s.tdlibNoAnswerForward);
+    }
+  }
+
+  /// Posts the alert as the bot: a rendered message with the tags and a link
+  /// back to the original.
+  ///
+  /// A bot cannot forward from a channel it is not in, so this is a rendering
+  /// rather than a forward — and that is the point. A message the owner sends
+  /// themselves never notifies their own other devices, so a forward is
+  /// invisible on the phone in your pocket. A bot is a different sender, so
+  /// its post arrives as a normal notification.
+  Future<void> _deliverThroughBot(ForwardTask task) async {
+    final factory = _botApi;
+    if (factory == null) {
+      throw DeliveryFailure(_s.botUnavailable, isPermanent: true);
+    }
+    final target = task.targetChatId.trim();
+    if (target.isEmpty) {
+      throw DeliveryFailure(_s.targetNotSet, isPermanent: true);
+    }
+
+    try {
+      await factory(_config.botToken.trim())
+          .sendMessage(chatId: target, html: task.html);
+    } on BotApiException catch (error) {
+      throw DeliveryFailure(
+        error.userMessage,
+        isPermanent: error.isPermanent,
+        retryAfter: error.retryAfter,
+      );
     }
   }
 
@@ -944,6 +1001,15 @@ class MonitorEngine {
           for (final chat in chats) {
             _chatTitles[chat.id] = chat.title;
           }
+          // Looking at the folder we are watching also refreshes what is
+          // watched. Adding a channel and then wondering for half an hour why
+          // nothing fires is not an acceptable answer.
+          if (folderId == _config.folderId) {
+            _adoptChats(chats);
+            _config = _config.copyWith(chats: chats);
+            _lastFolderRefresh = _now();
+            await _saveConfig(_config);
+          }
           _emit(
             Event(Ev.folderChats, {
               'folderId': folderId,
@@ -992,6 +1058,15 @@ class MonitorEngine {
         final raw = command.args['payload'];
         if (raw is! Map) return;
         await applySetup(SetupPayload.fromJson(Map<String, dynamic>.from(raw)));
+
+      case Cmd.diagAlert:
+        await _diagAlert();
+
+      case Cmd.diagForward:
+        await _diagForward();
+
+      case Cmd.diagState:
+        _emitDiagState();
     }
   }
 
@@ -1182,6 +1257,134 @@ class MonitorEngine {
         }),
       );
     }
+  }
+
+  // --- diagnostics --------------------------------------------------------
+
+  /// What the engine believes it is watching right now.
+  ///
+  /// The answer to "I added a channel and nothing happens" is almost always
+  /// in here: the chat list is resolved once every half hour, so a channel
+  /// added a minute ago may simply not be in it yet.
+  void _emitDiagState() {
+    _emit(
+      Event(Ev.diagState, {
+        'monitoring': _monitoring,
+        'auth': _auth,
+        'connection': _connection,
+        'folderId': _config.folderId ?? -1,
+        'watching': [
+          for (final id in _folderChatIds)
+            {'id': id, 'title': _chatTitles[id] ?? '$id'},
+        ],
+        'lastFolderRefresh': _lastFolderRefresh?.toIso8601String(),
+        'usesBot': _config.usesBot,
+        'delivery': _config.delivery.name,
+      }),
+    );
+  }
+
+  /// Fires the siren, with an entry that never reaches the match log.
+  Future<void> _diagAlert() async {
+    final entry = MatchEntry(
+      time: _now(),
+      chatId: 0,
+      chatTitle: _s.diagAlertTitle,
+      messageId: 0,
+      text: _s.diagAlertBody,
+      keywords: const ['тест'],
+      link: '',
+    );
+    final error = await _notifyLocally(entry);
+    _emitDiagResult(
+      error ?? _s.diagAlertFired(_s.matchChannelName),
+      ok: error == null,
+    );
+  }
+
+  /// Delivers the newest message of a watched chat down the real path.
+  ///
+  /// Deliberately the real path — the same forward or bot post a match would
+  /// take — so that a green result here means delivery genuinely works, not
+  /// that some separate test code path does.
+  Future<void> _diagForward() async {
+    if (_auth != AuthPhase.ready) {
+      _emitDiagResult(_s.signInFirst, ok: false);
+      return;
+    }
+    if (_folderChatIds.isEmpty) {
+      _emitDiagResult(_s.diagNoChats, ok: false);
+      return;
+    }
+
+    final found = await _newestWatchedMessage();
+    if (found == null) {
+      _emitDiagResult(_s.diagNoMessages, ok: false);
+      return;
+    }
+
+    final (chatId, messageId, text) = found;
+    final link = await _messageLink(chatId, messageId);
+    try {
+      await _deliverTask(
+        ForwardTask(
+          chatId: chatId,
+          messageId: messageId,
+          targetChatId: _config.targetChatId,
+          html: MessageFormatter.format(
+            chatTitle: _chatTitles[chatId] ?? '$chatId',
+            keywords: const ['тест'],
+            text: text,
+            link: link,
+            time: _now(),
+          ),
+        ),
+      );
+      _emitDiagResult(
+        _s.diagForwarded(_chatTitles[chatId] ?? '$chatId'),
+        ok: true,
+      );
+    } on DeliveryFailure catch (error) {
+      _emitDiagResult(error.message, ok: false);
+    } catch (error) {
+      _emitDiagResult('$error', ok: false);
+    }
+  }
+
+  /// The most recent message with text, across the watched chats.
+  Future<(int, int, String)?> _newestWatchedMessage() async {
+    for (final chatId in _folderChatIds) {
+      try {
+        final history = await _client.send({
+          '@type': 'getChatHistory',
+          'chat_id': chatId,
+          'from_message_id': 0,
+          'offset': 0,
+          'limit': 20,
+          'only_local': false,
+        }, timeout: const Duration(seconds: 20));
+
+        final messages = history['messages'];
+        if (messages is! List) continue;
+        for (final raw in messages) {
+          if (raw is! Map) continue;
+          final message = Map<String, dynamic>.from(raw);
+          final text = extractText(message['content']);
+          final messageId = (message['id'] as num?)?.toInt();
+          if (text != null && text.isNotEmpty && messageId != null) {
+            return (chatId, messageId, text);
+          }
+        }
+      } catch (error) {
+        _logger.warn('diag: history of $chatId failed: $error');
+      }
+    }
+    return null;
+  }
+
+  void _emitDiagResult(String message, {required bool ok}) {
+    _logger.info('diag: $message');
+    _emit(Event(Ev.diagResult, {'ok': ok, 'message': message}));
   }
 
   // --- setup transfer -----------------------------------------------------

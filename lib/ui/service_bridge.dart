@@ -43,6 +43,28 @@ class SetupResult {
   final String? error;
 }
 
+/// What the engine says it is watching, for the diagnostics screen.
+class DiagState {
+  const DiagState({
+    required this.monitoring,
+    required this.watching,
+    this.lastFolderRefresh,
+  });
+
+  final bool monitoring;
+
+  /// Titles of the chats under watch.
+  final List<String> watching;
+  final DateTime? lastFolderRefresh;
+}
+
+/// Outcome of one diagnostic action.
+class DiagResult {
+  const DiagResult(this.ok, this.message);
+  final bool ok;
+  final String message;
+}
+
 class ServiceError {
   const ServiceError(this.scope, this.code, this.message, this.at);
   final String scope;
@@ -91,6 +113,10 @@ class ServiceBridge extends ChangeNotifier {
   List<String> setupSkipped = const <String>[];
   SetupProgress? setupProgress;
   SetupResult? setupResult;
+
+  // --- diagnostics ---------------------------------------------------------
+  DiagState? diagState;
+  DiagResult? diagResult;
 
   bool get isReady => auth == AuthPhase.ready;
 
@@ -296,6 +322,24 @@ class ServiceBridge extends ChangeNotifier {
           error: event.field<String>('error'),
         );
 
+      case Ev.diagState:
+        final watching = event.data['watching'];
+        diagState = DiagState(
+          monitoring: event.field<bool>('monitoring') ?? false,
+          watching: [
+            if (watching is List)
+              for (final chat in watching)
+                if (chat is Map) (chat['title'] ?? '${chat['id']}').toString(),
+          ],
+          lastFolderRefresh: _parseTime(event.data['lastFolderRefresh']),
+        );
+
+      case Ev.diagResult:
+        diagResult = DiagResult(
+          event.field<bool>('ok') ?? false,
+          event.field<String>('message') ?? '',
+        );
+
       case Ev.logLines:
         final lines = event.data['lines'];
         if (lines is List) {
@@ -341,6 +385,15 @@ class ServiceBridge extends ChangeNotifier {
     lastError = null;
     notifyListeners();
     send(Command(Cmd.setupApply, {'payload': payload.toJson()}));
+  }
+
+  void requestDiagState() => send(Command(Cmd.diagState));
+
+  /// Fires one of the [Cmd.diagAlert] / [Cmd.diagForward] checks.
+  void runDiagnostic(String command) {
+    diagResult = null;
+    notifyListeners();
+    send(Command(command));
   }
 
   void clearSetupResult() {

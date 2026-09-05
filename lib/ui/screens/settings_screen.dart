@@ -33,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _apiHash;
   late final TextEditingController _targetChatId;
   late final TextEditingController _maxAge;
+  late final TextEditingController _botToken;
 
   bool _saved = false;
   bool _manualTarget = false;
@@ -52,6 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _apiHash = TextEditingController(text: widget.settings.apiHash);
     _targetChatId = TextEditingController(text: config.targetChatId);
     _maxAge = TextEditingController(text: '${config.maxAgeMinutes}');
+    _botToken = TextEditingController(text: config.botToken);
   }
 
   @override
@@ -60,6 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _apiHash.dispose();
     _targetChatId.dispose();
     _maxAge.dispose();
+    _botToken.dispose();
     super.dispose();
   }
 
@@ -72,6 +75,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final config = settings.readConfig().copyWith(
       targetChatId: _targetChatId.text.trim(),
       maxAgeMinutes: int.parse(_maxAge.text.trim()),
+      botToken: _botToken.text.trim(),
     );
     await settings.writeConfig(config);
     // Apply to a running engine immediately, and keep its copy authoritative.
@@ -302,6 +306,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 }
                 return null;
               },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _botToken,
+              decoration: InputDecoration(
+                labelText: l.botToken,
+                helperText: l.botTokenHelp,
+                helperMaxLines: 3,
+                border: const OutlineInputBorder(),
+              ),
+              validator: (value) {
+                final trimmed = (value ?? '').trim();
+                if (trimmed.isEmpty) return null;
+                return RegExp(r'^\d+:[A-Za-z0-9_-]{20,}$').hasMatch(trimmed)
+                    ? null
+                    : l.botTokenInvalid;
+              },
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l.botWhyHelp,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).hintColor,
+              ),
             ),
             const SizedBox(height: 20),
             FilledButton.icon(

@@ -82,4 +82,21 @@ class LocalisedEngineStrings implements EngineStrings {
 
   @override
   String get setupNothingResolved => _l.setupNothingResolved;
+
+  @override
+  String get botUnavailable => _l.botUnavailable;
+  @override
+  String get matchChannelName => _l.matchChannelName;
+  @override
+  String get diagAlertTitle => _l.diagAlertTitle;
+  @override
+  String get diagAlertBody => _l.diagAlertBody;
+  @override
+  String diagAlertFired(String channel) => _l.diagAlertFired(channel);
+  @override
+  String get diagNoChats => _l.diagNoChats;
+  @override
+  String get diagNoMessages => _l.diagNoMessages;
+  @override
+  String diagForwarded(String chat) => _l.diagForwarded(chat);
 }
