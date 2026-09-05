@@ -19,6 +19,8 @@ import '../core/td/td_client.dart';
 import '../core/td/td_native.dart';
 import '../core/td/td_transport.dart';
 import '../core/util/app_logger.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/service_strings.dart';
 import 'alert_notifier.dart';
 import 'monitor_engine.dart';
 
@@ -31,7 +33,7 @@ void startCallback() {
 class MonitorTaskHandler extends TaskHandler {
   static const Duration _selfStopDelay = Duration(seconds: 60);
 
-  /// Id of the "Стоп" action in the ongoing notification.
+  /// Id of the "Stop" action in the ongoing notification.
   static const String stopButtonId = 'stop_monitoring';
 
   AppLogger? _logger;
@@ -39,6 +41,9 @@ class MonitorTaskHandler extends TaskHandler {
   AlertNotifier? _notifier;
   TdClient? _client;
   MonitorEngine? _engine;
+
+  /// Device-language strings. Loaded once, at the start of the bootstrap.
+  L? _s;
 
   String? _nativeVersion;
   DateTime? _detachedAt;
@@ -93,6 +98,8 @@ class MonitorTaskHandler extends TaskHandler {
   Future<void> _bootstrap() async {
     final logger = _logger!;
 
+    final strings = _s ??= await loadServiceStrings();
+
     // Written by the UI isolate, so the cache here must be refreshed.
     final settings = await SettingsStore.open();
     await settings.reload();
@@ -108,7 +115,10 @@ class MonitorTaskHandler extends TaskHandler {
     // The alert channel is registered up front so its sound is in place before
     // the first match, and so a permission problem shows up in the log now.
     // Survives a TDLib restart: the channel only has to be created once.
-    final notifier = _notifier ??= AlertNotifier(onLog: logger.warn);
+    final notifier = _notifier ??= AlertNotifier(
+      strings: strings,
+      onLog: logger.warn,
+    );
     unawaited(
       notifier.init().catchError(
         (Object error) => logger.warn('alert channel setup failed: $error'),
@@ -156,6 +166,7 @@ class MonitorTaskHandler extends TaskHandler {
       },
       saveMonitoringActive: settings.setMonitoringActive,
       alert: notifier.notify,
+      strings: LocalisedEngineStrings(strings),
     );
     engine.onClientDead = () => unawaited(_restartClient());
     _engine = engine;
@@ -193,7 +204,7 @@ class MonitorTaskHandler extends TaskHandler {
 
   Map<String, dynamic> _emptyState() => {
     'auth': AuthPhase.init,
-    'authDetail': 'Не задано api_id / api_hash',
+    'authDetail': _s?.credentialsNotSet ?? '',
     'userName': '',
     'connection': ConnectionPhase.connecting,
     'monitoring': false,
@@ -274,16 +285,22 @@ class MonitorTaskHandler extends TaskHandler {
   }
 
   Future<void> _updateNotification(MonitorEngine engine) async {
+    final strings = _s;
+    if (strings == null) return;
+
     final connection = switch (engine.connectionPhase) {
-      ConnectionPhase.ready => 'онлайн',
-      ConnectionPhase.updating => 'оновлення',
-      ConnectionPhase.waitingForNetwork => 'немає мережі',
-      _ => 'підключення',
+      ConnectionPhase.ready => strings.connectionReady,
+      ConnectionPhase.updating => strings.connectionUpdating,
+      ConnectionPhase.waitingForNetwork => strings.connectionNoNetwork,
+      _ => strings.connectionConnectingShort,
     };
     final text = engine.isMonitoring
-        ? 'Моніторинг • ${engine.chatCount} чатів • '
-              '${engine.matchCount} збігів • $connection'
-        : 'Моніторинг зупинено • $connection';
+        ? strings.serviceRunning(
+            engine.chatCount,
+            engine.matchCount,
+            connection,
+          )
+        : strings.serviceStopped(connection);
 
     // A "Стоп" action is only meaningful while something is running.
     final showStop = engine.isMonitoring;
@@ -295,18 +312,16 @@ class MonitorTaskHandler extends TaskHandler {
     _lastNotificationHadStopButton = showStop;
     try {
       await FlutterForegroundTask.updateService(
-        notificationTitle: 'TG Alert Monitor',
+        notificationTitle: strings.appTitle,
         notificationText: text,
-        notificationButtons: showStop ? _stopButtons : const [],
+        notificationButtons: showStop
+            ? [NotificationButton(id: stopButtonId, text: strings.stop)]
+            : const [],
       );
     } catch (error) {
       _logger?.warn('notification update failed: $error');
     }
   }
-
-  static const List<NotificationButton> _stopButtons = [
-    NotificationButton(id: stopButtonId, text: 'Стоп'),
-  ];
 
   @override
   void onNotificationButtonPressed(String id) {

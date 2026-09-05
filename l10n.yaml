@@ -1,0 +1,7 @@
+# Ukrainian is the source of truth: the app was written for Ukrainian users,
+# and English is the translation. Hence app_uk.arb is the template.
+arb-dir: lib/l10n
+template-arb-file: app_uk.arb
+output-localization-file: app_localizations.dart
+output-class: L
+nullable-getter: false

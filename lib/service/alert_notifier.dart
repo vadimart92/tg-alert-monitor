@@ -9,6 +9,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../core/bot/message_formatter.dart';
 import '../core/model/match_entry.dart';
+import '../l10n/app_localizations.dart';
 
 /// Shows one heads-up notification per match and plays the siren.
 ///
@@ -20,21 +21,25 @@ import '../core/model/match_entry.dart';
 /// The channel is registered with alarm audio attributes: an air-raid alert
 /// that stays silent because the phone is on vibrate would be worthless.
 class AlertNotifier {
-  AlertNotifier({FlutterLocalNotificationsPlugin? plugin, this.onLog})
-    : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
+  AlertNotifier({
+    required L strings,
+    FlutterLocalNotificationsPlugin? plugin,
+    this.onLog,
+  }) : _s = strings,
+       _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
   /// Bumped whenever the channel's sound or importance changes: Android
   /// freezes both at creation time and ignores later edits, so a new sound
   /// only reaches existing installs under a new channel id.
   static const String channelId = 'tg_alert_matches_v1';
 
-  static const String channelName = 'Збіги за ключовими словами';
   static const String soundResource = 'siren_ostap_calm';
 
   /// Body limit — Android truncates far earlier than Telegram does.
   static const int bodyLimit = 800;
 
   final FlutterLocalNotificationsPlugin _plugin;
+  final L _s;
   final void Function(String message)? onLog;
 
   bool _initialised = false;
@@ -42,13 +47,12 @@ class AlertNotifier {
   /// One id per match, so a second alert does not replace the first.
   int _nextId = 1;
 
-  static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
+  AndroidNotificationChannel get _channel => AndroidNotificationChannel(
     channelId,
-    channelName,
-    description: 'Сирена та сповіщення, коли повідомлення містить ключове '
-        'слово',
+    _s.matchChannelName,
+    description: _s.matchChannelDescription,
     importance: Importance.max,
-    sound: RawResourceAndroidNotificationSound(soundResource),
+    sound: const RawResourceAndroidNotificationSound(soundResource),
     audioAttributesUsage: AudioAttributesUsage.alarm,
   );
 
@@ -75,12 +79,12 @@ class AlertNotifier {
       await init();
       await _plugin.show(
         id: _nextId++,
-        title: entry.chatTitle.isEmpty ? 'Збіг' : entry.chatTitle,
+        title: entry.chatTitle.isEmpty ? _s.match : entry.chatTitle,
         body: _body(entry),
         notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             channelId,
-            channelName,
+            _s.matchChannelName,
             importance: Importance.max,
             priority: Priority.high,
             category: AndroidNotificationCategory.alarm,

@@ -1,0 +1,288 @@
+{
+  "@@locale": "uk",
+
+  "appTitle": "TG Alert Monitor",
+  "@appTitle": {
+    "description": "Product name. Not translated."
+  },
+
+  "dash": "—",
+  "@dash": {
+    "description": "Placeholder shown in a status row that has no value yet."
+  },
+
+  "connectionReady": "онлайн",
+  "connectionUpdating": "оновлення",
+  "connectionNoNetwork": "немає мережі",
+  "connectionConnecting": "підключення…",
+  "@connectionConnecting": {
+    "description": "Connection state shown in the app; ends with an ellipsis."
+  },
+
+  "authWaitPhone": "Очікується номер телефону",
+  "authWaitCode": "Очікується код",
+  "authWaitPassword": "Очікується пароль 2FA",
+  "authClosed": "Сесію закрито",
+  "authUnsupported": "Непідтримуваний стан входу",
+  "authConnecting": "Підключення…",
+
+  "journal": "Журнал",
+  "settings": "Налаштування",
+
+  "monitoringStatus": "Моніторинг: {state}",
+  "@monitoringStatus": {
+    "placeholders": {
+      "state": {"type": "String"}
+    }
+  },
+  "monitoringActiveSince": "активний з {time}",
+  "@monitoringActiveSince": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "monitoringActive": "активний",
+  "monitoringStopped": "зупинено",
+
+  "rowConnection": "Підключення",
+  "rowAccount": "Акаунт",
+  "rowChatsInFolder": "Чатів у папці",
+  "rowMatchesThisSession": "Збігів за сесію",
+  "rowLastMatch": "Останній збіг",
+
+  "signInRequired": "Потрібен вхід у Telegram",
+
+  "folder": "Папка",
+  "telegramFolder": "Папка Telegram",
+  "chatCount": "{count} чатів",
+  "@chatCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "hideChats": "Сховати чати",
+  "showChats": "Показати чати",
+
+  "keywords": "Ключові слова",
+  "keywordsHelp": "Повідомлення вважається збігом, якщо містить хоча б одне з цих слів.",
+  "keywordHint": "Напр. Білогородка",
+  "stemHelp": "Сірим показано корінь, за яким шукаємо: він покриває відмінки («на Білогородку», «у Білогородці»). Щоб задати корінь самому, введіть слово, що закінчується на приголосну.",
+  "exclusions": "Слова-винятки",
+  "exclusionsHelp": "Якщо повідомлення містить таке слово, воно НЕ спрацьовує — навіть якщо ключове слово теж є. Напр. «відбій», «збито».",
+  "exclusionHint": "Напр. відбій",
+  "noExclusionsYet": "Винятків немає",
+  "noKeywordsYet": "Слів ще немає",
+  "newExclusion": "Новий виняток",
+  "newKeyword": "Нове слово",
+
+  "notifications": "Сповіщення",
+  "deliveryForward": "Форвард",
+  "deliveryLocal": "Локально",
+  "deliveryBoth": "Обидва",
+  "deliveryForwardHelp": "Оригінал пересилається в {target}. Телефон мовчить.",
+  "@deliveryForwardHelp": {
+    "placeholders": {
+      "target": {"type": "String"}
+    }
+  },
+  "deliveryLocalHelp": "Сирена і сповіщення на цьому телефоні. Нічого не пересилається.",
+  "deliveryBothHelp": "Пересилання в {target} — і сирена тут.",
+  "@deliveryBothHelp": {
+    "placeholders": {
+      "target": {"type": "String"}
+    }
+  },
+  "sirenHelp": "Сирена звучить на гучності будильника, тож чути її й у беззвучному режимі. Гучність і вібрацію можна змінити в системних налаштуваннях каналу «{channel}».",
+  "@sirenHelp": {
+    "placeholders": {
+      "channel": {"type": "String"}
+    }
+  },
+  "targetNotPicked": "канал (ще не вибраний у налаштуваннях)",
+  "quoted": "«{value}»",
+  "@quoted": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  },
+
+  "start": "Старт",
+  "stop": "Стоп",
+  "cannotStart": "Неможливо стартувати: {reasons}.",
+  "@cannotStart": {
+    "placeholders": {
+      "reasons": {"type": "String"}
+    }
+  },
+  "reasonSignIn": "потрібен вхід у Telegram",
+  "reasonNoFolder": "не вибрано папку",
+  "reasonNoKeywords": "немає ключових слів",
+  "reasonNoTarget": "не вибрано цільовий канал",
+  "reasonNoNotificationPermission": "не надано дозвіл на сповіщення",
+
+  "permissions": "Дозволи",
+  "notificationPermissionHelp": "Сповіщення потрібні, щоб Android дозволив фоновому сервісу працювати з вимкненим екраном.",
+  "allowNotifications": "Дозволити сповіщення",
+  "batteryHelp": "Без вимкненої оптимізації батареї система може зупинити моніторинг уночі.",
+  "disableBatteryOptimisation": "Вимкнути оптимізацію батареї",
+  "oemHint": "Xiaomi, Huawei, Samsung: у системних налаштуваннях застосунку увімкніть «Автозапуск» і встановіть батарею в режим «Без обмежень», а в «Останніх» закріпіть застосунок — інакше прошивка може вивантажити сервіс.",
+
+  "tabMatches": "Збіги",
+  "tabSystem": "Системний",
+  "clear": "Очистити",
+  "couldNotOpenLink": "Не вдалося відкрити посилання",
+  "copied": "Скопійовано: {link}",
+  "@copied": {
+    "placeholders": {
+      "link": {"type": "String"}
+    }
+  },
+  "noMatchesYet": "Збігів ще не було",
+  "journalEmpty": "Журнал порожній",
+
+  "logOutTitle": "Вийти з акаунта?",
+  "logOutBody": "Моніторинг зупиниться, сесія Telegram буде видалена. Для повернення знадобиться новий код входу.",
+  "cancel": "Скасувати",
+  "logOut": "Вийти",
+  "telegramSignIn": "Вхід у Telegram",
+  "enterPhoneInternational": "Введіть номер телефону в міжнародному форматі.",
+  "phoneNumber": "Номер телефону",
+  "next": "Далі",
+  "enterCode": "Введіть код підтвердження.",
+  "code": "Код",
+  "confirm": "Підтвердити",
+  "resendCode": "Надіслати код повторно",
+  "enterTwoFactorPassword": "Введіть пароль двофакторної автентифікації.",
+  "passwordHint": "Підказка: {hint}",
+  "@passwordHint": {
+    "placeholders": {
+      "hint": {"type": "String"}
+    }
+  },
+  "twoFactorPassword": "Пароль 2FA",
+  "signIn": "Увійти",
+  "unsupportedSignIn": "Цей сценарій входу не підтримується ({detail}). Увійдіть в офіційний Telegram і спробуйте ще раз.",
+  "@unsupportedSignIn": {
+    "placeholders": {
+      "detail": {"type": "String"}
+    }
+  },
+  "done": "Готово",
+  "signedIn": "Вхід виконано",
+  "connectingToTelegram": "Підключення до Telegram…",
+
+  "invalidCode": "Невірний код.",
+  "codeExpired": "Код застарів, надішліть новий.",
+  "invalidTwoFactorPassword": "Невірний пароль 2FA.",
+  "invalidPhoneNumber": "Невірний номер телефону.",
+  "tooManyAttempts": "Забагато спроб. Зачекайте близько {minutes} хв.",
+  "@tooManyAttempts": {
+    "placeholders": {
+      "minutes": {"type": "int"}
+    }
+  },
+
+  "settingsSaved": "Налаштування збережено",
+  "targetChannel": "Цільовий канал",
+  "targetChannelHelp": "Канали, у яких ви можете публікувати",
+  "pickChannel": "Оберіть канал",
+  "targetChat": "Цільовий чат",
+  "targetChatHelp": "@username або числовий id (-100…)",
+  "targetChatNotNeeded": "Не потрібен у режимі «{mode}»",
+  "@targetChatNotNeeded": {
+    "placeholders": {
+      "mode": {"type": "String"}
+    }
+  },
+  "usernameOrInteger": "@username або ціле число",
+  "findMyChannels": "Знайти мої канали",
+  "fromList": "Зі списку",
+  "manually": "Вручну",
+  "noChannelsFound": "Каналів не знайдено. Створіть канал і переконайтеся, що ви його адміністратор із правом «Публікувати повідомлення». Або введіть id вручну.",
+  "apiCredentialsHelp": "api_id та api_hash створюються на my.telegram.org → API development tools.",
+  "positiveInteger": "Ціле число більше нуля",
+  "thirtyTwoHexCharacters": "32 шістнадцяткові символи",
+  "maxAgeLabel": "Максимальний вік повідомлення, хв",
+  "maxAgeHelp": "Захист від лавини старих постів після реконекту",
+  "rangeFromTo": "Від {min} до {max}",
+  "@rangeFromTo": {
+    "placeholders": {
+      "min": {"type": "int"},
+      "max": {"type": "int"}
+    }
+  },
+  "save": "Зберегти",
+  "checkChannel": "Перевірити канал",
+  "testMessage": "Тестове повідомлення",
+  "channelNamed": "Канал: {title}",
+  "@channelNamed": {
+    "placeholders": {
+      "title": {"type": "String"}
+    }
+  },
+  "apiChangeNeedsRestart": "Зміна api_id / api_hash застосується після виходу з акаунта та перезапуску застосунку: параметри TDLib задаються один раз на базу даних.",
+
+  "serviceChannelName": "Моніторинг Telegram",
+  "serviceChannelDescription": "Постійне з’єднання з Telegram для сповіщень",
+  "serviceCouldNotStart": "Не вдалося запустити фоновий сервіс: {error}",
+  "@serviceCouldNotStart": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "serviceRunning": "Моніторинг • {chats} чатів • {matches} збігів • {connection}",
+  "@serviceRunning": {
+    "placeholders": {
+      "chats": {"type": "int"},
+      "matches": {"type": "int"},
+      "connection": {"type": "String"}
+    }
+  },
+  "serviceStopped": "Моніторинг зупинено • {connection}",
+  "@serviceStopped": {
+    "placeholders": {
+      "connection": {"type": "String"}
+    }
+  },
+  "connectionConnectingShort": "підключення",
+  "@connectionConnectingShort": {
+    "description": "Same as connectionConnecting, without the ellipsis; used in the ongoing notification."
+  },
+  "credentialsNotSet": "Не задано api_id / api_hash",
+
+  "matchChannelName": "Збіги за ключовими словами",
+  "matchChannelDescription": "Сирена та сповіщення, коли повідомлення містить ключове слово",
+  "match": "Збіг",
+
+  "codeSentToTelegram": "Код надіслано в Telegram на іншому пристрої",
+  "codeSentBySms": "Код надіслано в SMS",
+  "codeByCall": "Код продиктують у дзвінку",
+  "expectACall": "Очікуйте дзвінок",
+  "codeSentToFragment": "Код надіслано у Fragment",
+
+  "localAlertsUnavailable": "Локальні сповіщення недоступні в цьому процесі",
+  "tdlibNoAnswerForward": "TDLib не відповів на пересилання",
+  "tdlibNoAnswerSend": "TDLib не відповів на надсилання",
+  "tdlibNoAnswerTargetLookup": "TDLib не відповів на пошук цільового чату",
+  "tdlibNotResponding": "TDLib не відповідає",
+  "targetNotSet": "Цільовий чат не задано",
+  "targetMustBeUsernameOrId": "Цільовий чат має бути @username або числовим id",
+  "targetNotFound": "Цільовий чат не знайдено",
+  "noRightToPost": "Немає права публікувати в цільовому каналі.",
+  "sourceForbidsForwarding": "Канал-джерело забороняє пересилання.",
+  "targetNotFoundCheckId": "Цільовий чат не знайдено. Перевірте id або @username.",
+  "signInFirst": "Спочатку увійдіть у Telegram.",
+  "couldNotListChannels": "Не вдалося отримати список каналів: {error}",
+  "@couldNotListChannels": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "testMessageBody": "✅ TG Alert Monitor: тест, {stamp}",
+  "@testMessageBody": {
+    "placeholders": {
+      "stamp": {"type": "String"}
+    }
+  },
+  "testMessageSent": "Тест надіслано"
+}

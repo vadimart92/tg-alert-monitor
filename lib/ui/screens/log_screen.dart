@@ -12,6 +12,7 @@ import '../../core/bot/message_formatter.dart';
 import '../../core/ipc/protocol.dart';
 import '../../core/model/match_entry.dart';
 import '../../core/storage/match_log.dart';
+import '../../l10n/app_localizations.dart';
 import '../service_bridge.dart';
 
 class LogScreen extends StatefulWidget {
@@ -51,20 +52,21 @@ class _LogScreenState extends State<LogScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = L.of(context);
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Журнал'),
-          bottom: const TabBar(
+          title: Text(l.journal),
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'Збіги'),
-              Tab(text: 'Системний'),
+              Tab(text: l.tabMatches),
+              Tab(text: l.tabSystem),
             ],
           ),
           actions: [
             IconButton(
-              tooltip: 'Очистити',
+              tooltip: l.clear,
               icon: const Icon(Icons.delete_outline),
               onPressed: _clear,
             ),
@@ -97,22 +99,21 @@ class _LogScreenState extends State<LogScreen> {
       }
     }
     if (opened || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Не вдалося відкрити посилання')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(L.of(context).couldNotOpenLink)));
   }
 
   Future<void> _copy(MatchEntry entry) async {
     await Clipboard.setData(ClipboardData(text: entry.link));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Скопійовано: ${entry.link}')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(L.of(context).copied(entry.link))));
   }
 
   Widget _matchesTab(List<MatchEntry> matches) {
     if (matches.isEmpty) {
-      return const Center(child: Text('Збігів ще не було'));
+      return Center(child: Text(L.of(context).noMatchesYet));
     }
     return ListView.separated(
       itemCount: matches.length,
@@ -163,7 +164,7 @@ class _LogScreenState extends State<LogScreen> {
   Widget _systemTab() {
     final lines = widget.bridge.logLines;
     if (lines.isEmpty) {
-      return const Center(child: Text('Журнал порожній'));
+      return Center(child: Text(L.of(context).journalEmpty));
     }
     return ListView.builder(
       reverse: true,

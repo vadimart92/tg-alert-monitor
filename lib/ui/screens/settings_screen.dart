@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/ipc/protocol.dart';
 import '../../core/model/app_config.dart';
 import '../../core/storage/settings_store.dart';
+import '../../l10n/app_localizations.dart';
 import '../service_bridge.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -23,6 +24,9 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  /// Device-language strings, for every method on this state.
+  L get l => L.of(context);
+
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _apiId;
   late final TextEditingController _apiHash;
@@ -74,7 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     setState(() => _saved = true);
     ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Налаштування збережено')));
+        .showSnackBar(SnackBar(content: Text(l.settingsSaved)));
   }
 
   void _checkBot() {
@@ -111,10 +115,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           DropdownButtonFormField<String>(
             initialValue: knownIds.contains(current) ? current : null,
             isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Цільовий канал',
-              helperText: 'Канали, у яких ви можете публікувати',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: l.targetChannel,
+              helperText: l.targetChannelHelp,
+              border: const OutlineInputBorder(),
             ),
             items: [
               for (final target in targets)
@@ -131,27 +135,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
               setState(() => _targetChatId.text = value);
             },
             validator: (value) => (value == null || value.isEmpty)
-                ? _requiredTargetError('Оберіть канал')
+                ? _requiredTargetError(l.pickChannel)
                 : null,
           )
         else
           TextFormField(
             controller: _targetChatId,
             decoration: InputDecoration(
-              labelText: 'Цільовий чат',
+              labelText: l.targetChat,
               helperText: _delivery.forwards
-                  ? '@username або числовий id (-100…)'
-                  : 'Не потрібен у режимі «Локально»',
+                  ? l.targetChatHelp
+                  : l.targetChatNotNeeded(l.deliveryLocal),
               border: const OutlineInputBorder(),
             ),
             validator: (value) {
               final trimmed = (value ?? '').trim();
               if (trimmed.isEmpty) {
-                return _requiredTargetError('@username або ціле число');
+                return _requiredTargetError(l.usernameOrInteger);
               }
               if (trimmed.startsWith('@') && trimmed.length > 1) return null;
               if (int.tryParse(trimmed) != null) return null;
-              return '@username або ціле число';
+              return l.usernameOrInteger;
             },
           ),
         Row(
@@ -170,24 +174,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.refresh, size: 18),
-              label: const Text('Знайти мої канали'),
+              label: Text(l.findMyChannels),
             ),
             const Spacer(),
             if (targets != null && targets.isNotEmpty)
               TextButton(
                 onPressed: () => setState(() => _manualTarget = !_manualTarget),
-                child: Text(_manualTarget ? 'Зі списку' : 'Вручну'),
+                child: Text(_manualTarget ? l.fromList : l.manually),
               ),
           ],
         ),
         if (targets != null && targets.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 8),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              'Каналів не знайдено. Створіть канал і переконайтеся, що ви '
-              'його адміністратор із правом «Публікувати повідомлення». '
-              'Або введіть id вручну.',
-              style: TextStyle(fontSize: 12),
+              l.noChannelsFound,
+              style: const TextStyle(fontSize: 12),
             ),
           ),
       ],
@@ -202,17 +204,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Налаштування')),
+      appBar: AppBar(title: Text(l.settings)),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            const Text(
-              'api_id та api_hash створюються на my.telegram.org → '
-              'API development tools.',
-              style: TextStyle(fontSize: 12),
-            ),
+            Text(l.apiCredentialsHelp, style: const TextStyle(fontSize: 12)),
             const SizedBox(height: 12),
             TextFormField(
               controller: _apiId,
@@ -224,7 +222,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               validator: (value) {
                 final parsed = int.tryParse((value ?? '').trim());
                 if (parsed == null || parsed <= 0) {
-                  return 'Ціле число більше нуля';
+                  return l.positiveInteger;
                 }
                 return null;
               },
@@ -239,7 +237,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               validator: (value) =>
                   RegExp(r'^[0-9a-fA-F]{32}$').hasMatch((value ?? '').trim())
                   ? null
-                  : '32 шістнадцяткові символи',
+                  : l.thirtyTwoHexCharacters,
             ),
             const SizedBox(height: 12),
             ListenableBuilder(
@@ -249,10 +247,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 12),
             TextFormField(
               controller: _maxAge,
-              decoration: const InputDecoration(
-                labelText: 'Максимальний вік повідомлення, хв',
-                helperText: 'Захист від лавини старих постів після реконекту',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l.maxAgeLabel,
+                helperText: l.maxAgeHelp,
+                border: const OutlineInputBorder(),
               ),
               keyboardType: TextInputType.number,
               validator: (value) {
@@ -260,8 +258,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (parsed == null ||
                     parsed < MonitorConfig.minMaxAgeMinutes ||
                     parsed > MonitorConfig.maxMaxAgeMinutes) {
-                  return 'Від ${MonitorConfig.minMaxAgeMinutes} '
-                      'до ${MonitorConfig.maxMaxAgeMinutes}';
+                  return l.rangeFromTo(
+                    MonitorConfig.minMaxAgeMinutes,
+                    MonitorConfig.maxMaxAgeMinutes,
+                  );
                 }
                 return null;
               },
@@ -270,7 +270,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             FilledButton.icon(
               onPressed: _save,
               icon: const Icon(Icons.save),
-              label: const Text('Зберегти'),
+              label: Text(l.save),
             ),
             const SizedBox(height: 8),
             Row(
@@ -278,14 +278,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: _checkBot,
-                    child: const Text('Перевірити канал'),
+                    child: Text(l.checkChannel),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton(
                     onPressed: _testBot,
-                    child: const Text('Тестове повідомлення'),
+                    child: Text(l.testMessage),
                   ),
                 ),
               ],
@@ -313,7 +313,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if ((bridge.botChatTitle ?? '').isNotEmpty)
-                            Text('Канал: ${bridge.botChatTitle}'),
+                            Text(l.channelNamed(bridge.botChatTitle!)),
                         ],
                       ),
                     ),
@@ -323,13 +323,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
             if (_saved)
-              const Padding(
-                padding: EdgeInsets.only(top: 16),
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
                 child: Text(
-                  'Зміна api_id / api_hash застосується після виходу з акаунта '
-                  'та перезапуску застосунку: параметри TDLib задаються один '
-                  'раз на базу даних.',
-                  style: TextStyle(fontSize: 12),
+                  l.apiChangeNeedsRestart,
+                  style: const TextStyle(fontSize: 12),
                 ),
               ),
           ],

@@ -17,6 +17,7 @@ import '../core/storage/match_log.dart';
 import '../core/td/td_client.dart';
 import '../core/td/td_json.dart';
 import '../core/util/app_logger.dart';
+import '../core/util/engine_strings.dart';
 
 /// `setTdlibParameters` payload (spec 7.4).
 class TdlibParams {
@@ -123,7 +124,9 @@ class MonitorEngine {
     this.connectionStallTimeout = const Duration(minutes: 2),
     Duration forwardInterval = const Duration(milliseconds: 1500),
     this._alert,
+    EngineStrings strings = const UkrainianEngineStrings(),
   }) : _config = config,
+       _s = strings,
        _now = now ?? DateTime.now {
     _matcher = KeywordMatcher(config.keywords);
     _forwardQueue = ForwardQueue(
@@ -142,6 +145,7 @@ class MonitorEngine {
   final Future<void> Function(MonitorConfig config) _saveConfig;
   final Future<void> Function(bool active) _saveMonitoringActive;
   final LocalAlert? _alert;
+  final EngineStrings _s;
   final DateTime Function() _now;
 
   final Duration folderRefreshInterval;
@@ -341,20 +345,19 @@ class MonitorEngine {
   }
 
   /// Human hint about where Telegram sent the login code.
-  static String _codeTypeLabel(Object? codeInfo) {
+  String _codeTypeLabel(Object? codeInfo) {
     if (codeInfo is! Map) return '';
     final type = codeInfo['type'];
     if (type is! Map) return '';
     return switch (type['@type']) {
-      'authenticationCodeTypeTelegramMessage' =>
-        'Код надіслано в Telegram на іншому пристрої',
+      'authenticationCodeTypeTelegramMessage' => _s.codeSentToTelegram,
       'authenticationCodeTypeSms' ||
       'authenticationCodeTypeSmsWord' ||
-      'authenticationCodeTypeSmsPhrase' => 'Код надіслано в SMS',
-      'authenticationCodeTypeCall' => 'Код продиктують у дзвінку',
+      'authenticationCodeTypeSmsPhrase' => _s.codeSentBySms,
+      'authenticationCodeTypeCall' => _s.codeByCall,
       'authenticationCodeTypeFlashCall' ||
-      'authenticationCodeTypeMissedCall' => 'Очікуйте дзвінок',
-      'authenticationCodeTypeFragment' => 'Код надіслано у Fragment',
+      'authenticationCodeTypeMissedCall' => _s.expectACall,
+      'authenticationCodeTypeFragment' => _s.codeSentToFragment,
       _ => '',
     };
   }
@@ -602,9 +605,8 @@ class MonitorEngine {
   Future<String?> _notifyLocally(MatchEntry entry) async {
     final alert = _alert;
     if (alert == null) {
-      const message = 'Локальні сповіщення недоступні в цьому процесі';
       _logger.warn('local alert requested but no notifier is wired up');
-      return message;
+      return _s.localAlertsUnavailable;
     }
     try {
       await alert(entry);
@@ -667,7 +669,7 @@ class MonitorEngine {
       await _sendText(targetId, task.html, html: true);
       return;
     } on TdTimeout {
-      throw DeliveryFailure('TDLib не відповів на пересилання');
+      throw DeliveryFailure(_s.tdlibNoAnswerForward);
     }
   }
 
@@ -692,7 +694,7 @@ class MonitorEngine {
     } on TdError catch (error) {
       throw _deliveryFailureFrom(error);
     } on TdTimeout {
-      throw DeliveryFailure('TDLib не відповів на надсилання');
+      throw DeliveryFailure(_s.tdlibNoAnswerSend);
     }
   }
 
@@ -700,7 +702,7 @@ class MonitorEngine {
   Future<int> _resolveTargetChat(String configured) async {
     final trimmed = configured.trim();
     if (trimmed.isEmpty) {
-      throw DeliveryFailure('Цільовий чат не задано', isPermanent: true);
+      throw DeliveryFailure(_s.targetNotSet, isPermanent: true);
     }
     final cached = _targetChatId;
     if (cached != null && _targetChatIdSource == trimmed) return cached;
@@ -716,10 +718,7 @@ class MonitorEngine {
       } else {
         final numeric = int.tryParse(trimmed);
         if (numeric == null) {
-          throw DeliveryFailure(
-            'Цільовий чат має бути @username або числовим id',
-            isPermanent: true,
-          );
+          throw DeliveryFailure(_s.targetMustBeUsernameOrId, isPermanent: true);
         }
         // Makes sure TDLib knows the chat before we post into it.
         final chat = await _client.send({
@@ -730,7 +729,7 @@ class MonitorEngine {
       }
 
       if (resolved == 0) {
-        throw DeliveryFailure('Цільовий чат не знайдено', isPermanent: true);
+        throw DeliveryFailure(_s.targetNotFound, isPermanent: true);
       }
       _targetChatId = resolved;
       _targetChatIdSource = trimmed;
@@ -738,12 +737,12 @@ class MonitorEngine {
     } on TdError catch (error) {
       throw _deliveryFailureFrom(error);
     } on TdTimeout {
-      throw DeliveryFailure('TDLib не відповів на пошук цільового чату');
+      throw DeliveryFailure(_s.tdlibNoAnswerTargetLookup);
     }
   }
 
   /// Maps a TDLib error onto the queue's retry policy.
-  static DeliveryFailure _deliveryFailureFrom(TdError error) {
+  DeliveryFailure _deliveryFailureFrom(TdError error) {
     final flood = RegExp(r'FLOOD_WAIT_(\d+)').firstMatch(error.message);
     if (flood != null) {
       return DeliveryFailure(
@@ -757,17 +756,17 @@ class MonitorEngine {
     return DeliveryFailure(_humanTdError(error), isPermanent: permanent);
   }
 
-  static String _humanTdError(TdError error) {
+  String _humanTdError(TdError error) {
     final message = error.message;
     if (message.contains('CHAT_WRITE_FORBIDDEN') ||
         message.contains('CHAT_ADMIN_REQUIRED')) {
-      return 'Немає права публікувати в цільовому каналі.';
+      return _s.noRightToPost;
     }
     if (message.contains('CHAT_FORWARDS_RESTRICTED')) {
-      return 'Канал-джерело забороняє пересилання.';
+      return _s.sourceForbidsForwarding;
     }
     if (message.contains('Chat not found')) {
-      return 'Цільовий чат не знайдено. Перевірте id або @username.';
+      return _s.targetNotFoundCheckId;
     }
     return message;
   }
@@ -1004,7 +1003,7 @@ class MonitorEngine {
         Event(Ev.error, {
           'scope': ErrorScope.auth,
           'code': 0,
-          'message': 'TDLib не відповідає',
+          'message': _s.tdlibNotResponding,
         }),
       );
     }
@@ -1021,7 +1020,7 @@ class MonitorEngine {
         Event(Ev.error, {
           'scope': ErrorScope.bot,
           'code': 0,
-          'message': 'Спочатку увійдіть у Telegram.',
+          'message': _s.signInFirst,
         }),
       );
       return;
@@ -1072,7 +1071,7 @@ class MonitorEngine {
         Event(Ev.error, {
           'scope': ErrorScope.bot,
           'code': 0,
-          'message': 'Не вдалося отримати список каналів: $error',
+          'message': _s.couldNotListChannels('$error'),
         }),
       );
       return;
@@ -1108,7 +1107,7 @@ class MonitorEngine {
         Event(Ev.error, {
           'scope': ErrorScope.bot,
           'code': 0,
-          'message': 'Спочатку увійдіть у Telegram.',
+          'message': _s.signInFirst,
         }),
       );
       return;
@@ -1120,13 +1119,11 @@ class MonitorEngine {
         '${_two(now.hour)}:${_two(now.minute)}';
     try {
       final targetId = await _resolveTargetChat(targetChatId);
-      await _sendText(
-        targetId,
-        '✅ TG Alert Monitor: тест, $stamp',
-        html: false,
-      );
+      await _sendText(targetId, _s.testMessageBody(stamp), html: false);
       _logger.info('test message sent');
-      _emit(Event(Ev.botInfo, {'botName': '', 'chatTitle': 'Тест надіслано'}));
+      _emit(
+        Event(Ev.botInfo, {'botName': '', 'chatTitle': _s.testMessageSent}),
+      );
     } on DeliveryFailure catch (error) {
       _logger.warn('test message failed: ${error.message}');
       _emit(
@@ -1146,7 +1143,7 @@ class MonitorEngine {
         Event(Ev.error, {
           'scope': ErrorScope.bot,
           'code': 0,
-          'message': 'Спочатку увійдіть у Telegram.',
+          'message': _s.signInFirst,
         }),
       );
       return;
