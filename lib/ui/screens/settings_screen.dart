@@ -26,11 +26,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _apiId;
   late final TextEditingController _apiHash;
-  late final TextEditingController _botToken;
   late final TextEditingController _targetChatId;
   late final TextEditingController _maxAge;
 
-  bool _obscureToken = true;
   bool _saved = false;
   bool _manualTarget = false;
 
@@ -42,7 +40,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       text: widget.settings.apiId == 0 ? '' : '${widget.settings.apiId}',
     );
     _apiHash = TextEditingController(text: widget.settings.apiHash);
-    _botToken = TextEditingController(text: config.botToken);
     _targetChatId = TextEditingController(text: config.targetChatId);
     _maxAge = TextEditingController(text: '${config.maxAgeMinutes}');
   }
@@ -51,7 +48,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _apiId.dispose();
     _apiHash.dispose();
-    _botToken.dispose();
     _targetChatId.dispose();
     _maxAge.dispose();
     super.dispose();
@@ -64,7 +60,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await settings.setApiId(int.parse(_apiId.text.trim()));
     await settings.setApiHash(_apiHash.text.trim());
     final config = settings.readConfig().copyWith(
-      botToken: _botToken.text.trim(),
       targetChatId: _targetChatId.text.trim(),
       maxAgeMinutes: int.parse(_maxAge.text.trim()),
     );
@@ -80,20 +75,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _checkBot() {
     widget.bridge.clearError();
     widget.bridge.send(
-      Command(Cmd.botCheck, {
-        'botToken': _botToken.text.trim(),
-        'targetChatId': _targetChatId.text.trim(),
-      }),
+      Command(Cmd.botCheck, {'targetChatId': _targetChatId.text.trim()}),
     );
   }
 
   void _testBot() {
     widget.bridge.clearError();
     widget.bridge.send(
-      Command(Cmd.botTest, {
-        'botToken': _botToken.text.trim(),
-        'targetChatId': _targetChatId.text.trim(),
-      }),
+      Command(Cmd.botTest, {'targetChatId': _targetChatId.text.trim()}),
     );
   }
 
@@ -119,7 +108,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             isExpanded: true,
             decoration: const InputDecoration(
               labelText: 'Цільовий канал',
-              helperText: 'Канали, у які додано бота з правом публікації',
+              helperText: 'Канали, у яких ви можете публікувати',
               border: OutlineInputBorder(),
             ),
             items: [
@@ -160,17 +149,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: bridge.discoveringTargets
                   ? null
                   : () {
-                      final token = _botToken.text.trim();
-                      if (token.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Спочатку введіть токен бота'),
-                          ),
-                        );
-                        return;
-                      }
                       setState(() => _manualTarget = false);
-                      bridge.discoverTargets(token);
+                      bridge.discoverTargets();
                     },
               icon: bridge.discoveringTargets
                   ? const SizedBox(
@@ -179,7 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.refresh, size: 18),
-              label: const Text('Знайти канали бота'),
+              label: const Text('Знайти мої канали'),
             ),
             const Spacer(),
             if (targets != null && targets.isNotEmpty)
@@ -193,9 +173,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Padding(
             padding: EdgeInsets.only(bottom: 8),
             child: Text(
-              'Каналів не знайдено. Додайте бота адміністратором у канал '
-              'із правом «Публікувати повідомлення» — і ви маєте бути '
-              'адміністратором цього каналу. Або введіть id вручну.',
+              'Каналів не знайдено. Створіть канал і переконайтеся, що ви '
+              'його адміністратор із правом «Публікувати повідомлення». '
+              'Або введіть id вручну.',
               style: TextStyle(fontSize: 12),
             ),
           ),
@@ -246,27 +226,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   : '32 шістнадцяткові символи',
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _botToken,
-              obscureText: _obscureToken,
-              decoration: InputDecoration(
-                labelText: 'Токен бота',
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureToken ? Icons.visibility : Icons.visibility_off,
-                  ),
-                  onPressed: () =>
-                      setState(() => _obscureToken = !_obscureToken),
-                ),
-              ),
-              validator: (value) =>
-                  RegExp(r'^\d+:[A-Za-z0-9_-]{30,}$')
-                      .hasMatch((value ?? '').trim())
-                  ? null
-                  : 'Формат 123456:AA…',
-            ),
-            const SizedBox(height: 12),
             ListenableBuilder(
               listenable: widget.bridge,
               builder: (context, _) => _targetChatField(),
@@ -303,7 +262,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: _checkBot,
-                    child: const Text('Перевірити бота'),
+                    child: const Text('Перевірити канал'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -337,8 +296,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if ((bridge.botName ?? '').isNotEmpty)
-                            Text('Бот: ${bridge.botName}'),
                           if ((bridge.botChatTitle ?? '').isNotEmpty)
                             Text('Канал: ${bridge.botChatTitle}'),
                         ],

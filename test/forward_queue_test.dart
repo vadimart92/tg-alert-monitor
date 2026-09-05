@@ -1,8 +1,5 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
-import 'package:tg_alert_monitor/core/bot/bot_api.dart';
 import 'package:tg_alert_monitor/core/bot/forward_queue.dart';
 import 'package:tg_alert_monitor/core/model/match_entry.dart';
 
@@ -13,20 +10,40 @@ ForwardTask _task(int id) => ForwardTask(
   html: 'payload $id',
 );
 
-const String _okBody = '{"ok":true,"result":{"message_id":1}}';
+/// Scripted delivery: records when each attempt happened and fails on demand,
+/// so the queue's ordering, spacing and retry policy can be observed without
+/// any real transport.
+class FakeDelivery {
+  FakeDelivery(this._clock);
+
+  final Duration Function() _clock;
+
+  /// One entry per attempt, including retries.
+  final List<Duration> attempts = <Duration>[];
+  final List<ForwardTask> delivered = <ForwardTask>[];
+
+  /// Failure to raise for a given attempt number; `null` lets it succeed.
+  DeliveryFailure? Function(int attempt)? failWith;
+
+  Future<void> call(ForwardTask task) async {
+    attempts.add(_clock());
+    final failure = failWith?.call(attempts.length);
+    if (failure != null) throw failure;
+    delivered.add(task);
+  }
+
+  List<Duration> get gaps => [
+    for (var i = 1; i < attempts.length; i++) attempts[i] - attempts[i - 1],
+  ];
+}
 
 void main() {
   group('ForwardQueue rate limiting', () {
     test('leaves at least minInterval between consecutive sends', () {
       fakeAsync((async) {
-        final sendTimes = <Duration>[];
-        final client = MockClient((_) async {
-          sendTimes.add(async.elapsed);
-          return http.Response(_okBody, 200);
-        });
-
+        final delivery = FakeDelivery(() => async.elapsed);
         final queue = ForwardQueue(
-          apiProvider: () => HttpBotApi(client, 'token'),
+          deliver: delivery.call,
           onStatus: (_, _, _) {},
         );
 
@@ -35,26 +52,18 @@ void main() {
         }
         async.elapse(const Duration(seconds: 30));
 
-        expect(sendTimes, hasLength(4));
-        for (var i = 1; i < sendTimes.length; i++) {
-          expect(
-            sendTimes[i] - sendTimes[i - 1],
-            greaterThanOrEqualTo(const Duration(milliseconds: 1500)),
-            reason: 'gap between send $i and ${i - 1}',
-          );
+        expect(delivery.attempts, hasLength(4));
+        for (final gap in delivery.gaps) {
+          expect(gap, greaterThanOrEqualTo(const Duration(milliseconds: 1500)));
         }
       });
     });
 
     test('preserves FIFO order', () {
       fakeAsync((async) {
-        final bodies = <String>[];
-        final client = MockClient((request) async {
-          bodies.add(request.body);
-          return http.Response(_okBody, 200);
-        });
+        final delivery = FakeDelivery(() => async.elapsed);
         final queue = ForwardQueue(
-          apiProvider: () => HttpBotApi(client, 'token'),
+          deliver: delivery.call,
           onStatus: (_, _, _) {},
         );
 
@@ -63,75 +72,57 @@ void main() {
         }
         async.elapse(const Duration(seconds: 30));
 
-        for (var id = 1; id <= 5; id++) {
-          expect(bodies[id - 1], contains('payload $id'));
-        }
+        expect(delivery.delivered.map((t) => t.messageId), [1, 2, 3, 4, 5]);
       });
     });
   });
 
   group('ForwardQueue retries', () {
-    test('honours retry_after on 429 and then succeeds', () {
+    test('waits exactly as long as a rate limit asks, then succeeds', () {
       fakeAsync((async) {
-        final attempts = <Duration>[];
-        final client = MockClient((_) async {
-          attempts.add(async.elapsed);
-          if (attempts.length == 1) {
-            return http.Response(
-              '{"ok":false,"error_code":429,"description":"Too Many Requests",'
-              '"parameters":{"retry_after":7}}',
-              429,
-            );
-          }
-          return http.Response(_okBody, 200);
-        });
+        final delivery = FakeDelivery(() => async.elapsed)
+          ..failWith = (attempt) => attempt == 1
+              ? DeliveryFailure(
+                  'Too Many Requests',
+                  retryAfter: const Duration(seconds: 7),
+                )
+              : null;
 
         final statuses = <MatchStatus>[];
-        final queue = ForwardQueue(
-          apiProvider: () => HttpBotApi(client, 'token'),
+        ForwardQueue(
+          deliver: delivery.call,
           onStatus: (_, status, _) => statuses.add(status),
-        );
-
-        queue.enqueue(_task(1));
+        ).enqueue(_task(1));
         async.elapse(const Duration(seconds: 30));
 
-        expect(attempts, hasLength(2));
+        expect(delivery.attempts, hasLength(2));
         expect(
-          attempts[1] - attempts[0],
+          delivery.gaps.single,
           greaterThanOrEqualTo(const Duration(seconds: 7)),
         );
         expect(statuses, [MatchStatus.sent]);
       });
     });
 
-    test('backs off exponentially on 5xx and eventually fails', () {
+    test('backs off exponentially on a transient failure, then gives up', () {
       fakeAsync((async) {
-        final attempts = <Duration>[];
-        final client = MockClient((_) async {
-          attempts.add(async.elapsed);
-          return http.Response('{"ok":false,"description":"boom"}', 500);
-        });
+        final delivery = FakeDelivery(() => async.elapsed)
+          ..failWith = (_) => DeliveryFailure('boom');
 
         final statuses = <MatchStatus>[];
         String? lastError;
-        final queue = ForwardQueue(
-          apiProvider: () => HttpBotApi(client, 'token'),
+        ForwardQueue(
+          deliver: delivery.call,
           maxAttempts: 5,
           onStatus: (_, status, error) {
             statuses.add(status);
             lastError = error;
           },
-        );
-
-        queue.enqueue(_task(1));
+        ).enqueue(_task(1));
         async.elapse(const Duration(minutes: 10));
 
-        expect(attempts, hasLength(5));
-        // Gaps grow 2s, 4s, 8s, 16s.
-        final gaps = [
-          for (var i = 1; i < attempts.length; i++)
-            attempts[i] - attempts[i - 1],
-        ];
+        expect(delivery.attempts, hasLength(5));
+        final gaps = delivery.gaps;
         for (var i = 1; i < gaps.length; i++) {
           expect(
             gaps[i],
@@ -140,127 +131,114 @@ void main() {
           );
         }
         expect(statuses, [MatchStatus.failed]);
-        expect(lastError, isNotNull);
+        expect(lastError, 'boom');
       });
     });
 
     test('caps the backoff at maxBackoff', () {
       fakeAsync((async) {
-        final attempts = <Duration>[];
-        final client = MockClient((_) async {
-          attempts.add(async.elapsed);
-          return http.Response('{"ok":false,"description":"boom"}', 503);
-        });
+        final delivery = FakeDelivery(() => async.elapsed)
+          ..failWith = (_) => DeliveryFailure('boom');
 
-        final queue = ForwardQueue(
-          apiProvider: () => HttpBotApi(client, 'token'),
+        ForwardQueue(
+          deliver: delivery.call,
           maxAttempts: 10,
           maxBackoff: const Duration(seconds: 60),
           onStatus: (_, _, _) {},
-        );
-
-        queue.enqueue(_task(1));
+        ).enqueue(_task(1));
         async.elapse(const Duration(minutes: 20));
 
-        final gaps = [
-          for (var i = 1; i < attempts.length; i++)
-            attempts[i] - attempts[i - 1],
-        ];
-        expect(attempts, hasLength(10));
-        for (final gap in gaps) {
+        expect(delivery.attempts, hasLength(10));
+        for (final gap in delivery.gaps) {
           expect(gap, lessThanOrEqualTo(const Duration(seconds: 61)));
         }
       });
     });
 
-    test('a network failure is retried', () {
+    test('a transient failure that clears is retried and delivered', () {
       fakeAsync((async) {
-        var calls = 0;
-        final client = MockClient((_) async {
-          calls++;
-          if (calls < 3) throw const SocketExceptionStub();
-          return http.Response(_okBody, 200);
-        });
+        final delivery = FakeDelivery(() => async.elapsed)
+          ..failWith = (attempt) =>
+              attempt < 3 ? DeliveryFailure('no network') : null;
 
         final statuses = <MatchStatus>[];
-        final queue = ForwardQueue(
-          apiProvider: () => HttpBotApi(client, 'token'),
+        ForwardQueue(
+          deliver: delivery.call,
           onStatus: (_, status, _) => statuses.add(status),
-        );
-
-        queue.enqueue(_task(1));
+        ).enqueue(_task(1));
         async.elapse(const Duration(minutes: 2));
 
-        expect(calls, 3);
+        expect(delivery.attempts, hasLength(3));
         expect(statuses, [MatchStatus.sent]);
       });
     });
   });
 
   group('ForwardQueue permanent failures', () {
-    test('403 fails immediately with no retries', () {
+    test('a permanent failure is not retried', () {
       fakeAsync((async) {
-        var calls = 0;
-        final client = MockClient((_) async {
-          calls++;
-          return http.Response(
-            '{"ok":false,"error_code":403,'
-            '"description":"Forbidden: bot is not a member"}',
-            403,
+        final delivery = FakeDelivery(() => async.elapsed)
+          ..failWith = (_) => DeliveryFailure(
+            'Немає права публікувати в цільовому каналі.',
+            isPermanent: true,
           );
-        });
 
         final statuses = <MatchStatus>[];
         String? lastError;
-        final queue = ForwardQueue(
-          apiProvider: () => HttpBotApi(client, 'token'),
+        ForwardQueue(
+          deliver: delivery.call,
           onStatus: (_, status, error) {
             statuses.add(status);
             lastError = error;
           },
-        );
-
-        queue.enqueue(_task(1));
+        ).enqueue(_task(1));
         async.elapse(const Duration(minutes: 5));
 
-        expect(calls, 1);
+        expect(delivery.attempts, hasLength(1));
         expect(statuses, [MatchStatus.failed]);
-        expect(lastError, contains('адміністратором'));
+        expect(lastError, contains('права публікувати'));
       });
     });
 
-    test('401 and 400 also fail immediately', () {
-      for (final status in [400, 401]) {
-        fakeAsync((async) {
-          var calls = 0;
-          final client = MockClient((_) async {
-            calls++;
-            return http.Response(
-              '{"ok":false,"error_code":$status,"description":"chat not found"}',
-              status,
-            );
-          });
-          final results = <MatchStatus>[];
-          ForwardQueue(
-            apiProvider: () => HttpBotApi(client, 'token'),
-            onStatus: (_, s, _) => results.add(s),
-          ).enqueue(_task(1));
-          async.elapse(const Duration(minutes: 5));
+    test('an unexpected error is reported rather than retried forever', () {
+      fakeAsync((async) {
+        final statuses = <MatchStatus>[];
+        ForwardQueue(
+          deliver: (_) async => throw StateError('bug'),
+          onStatus: (_, status, _) => statuses.add(status),
+        ).enqueue(_task(1));
+        async.elapse(const Duration(minutes: 5));
 
-          expect(calls, 1, reason: 'HTTP $status');
-          expect(results, [MatchStatus.failed], reason: 'HTTP $status');
-        });
-      }
+        expect(statuses, [MatchStatus.failed]);
+      });
+    });
+
+    test('one failing task does not block the rest of the queue', () {
+      fakeAsync((async) {
+        final delivery = FakeDelivery(() => async.elapsed)
+          ..failWith = (attempt) =>
+              attempt == 1 ? DeliveryFailure('nope', isPermanent: true) : null;
+
+        final queue = ForwardQueue(
+          deliver: delivery.call,
+          onStatus: (_, _, _) {},
+        );
+        queue.enqueue(_task(1));
+        queue.enqueue(_task(2));
+        async.elapse(const Duration(seconds: 30));
+
+        expect(delivery.delivered.map((t) => t.messageId), [2]);
+      });
     });
   });
 
   group('ForwardQueue status reporting', () {
     test('reports the task it was given, so the log can be updated', () {
       fakeAsync((async) {
-        final client = MockClient((_) async => http.Response(_okBody, 200));
+        final delivery = FakeDelivery(() => async.elapsed);
         final reported = <int>[];
         final queue = ForwardQueue(
-          apiProvider: () => HttpBotApi(client, 'token'),
+          deliver: delivery.call,
           onStatus: (task, _, _) => reported.add(task.messageId),
         );
 
@@ -274,13 +252,9 @@ void main() {
 
     test('stop() drops everything not yet sent', () {
       fakeAsync((async) {
-        var calls = 0;
-        final client = MockClient((_) async {
-          calls++;
-          return http.Response(_okBody, 200);
-        });
+        final delivery = FakeDelivery(() => async.elapsed);
         final queue = ForwardQueue(
-          apiProvider: () => HttpBotApi(client, 'token'),
+          deliver: delivery.call,
           onStatus: (_, _, _) {},
         );
 
@@ -291,17 +265,9 @@ void main() {
         queue.stop();
         async.elapse(const Duration(seconds: 30));
 
-        expect(calls, lessThan(5));
+        expect(delivery.attempts.length, lessThan(5));
         expect(queue.pending, 0);
       });
     });
   });
-}
-
-/// Stand-in for a transport failure; [HttpBotApi] treats any throw from the
-/// client as a retryable network error.
-class SocketExceptionStub implements Exception {
-  const SocketExceptionStub();
-  @override
-  String toString() => 'Connection refused';
 }

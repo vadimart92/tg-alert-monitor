@@ -16,7 +16,6 @@ class SettingsStore {
 
   static const String keyApiId = 'apiId';
   static const String keyApiHash = 'apiHash';
-  static const String keyBotToken = 'botToken';
   static const String keyTargetChatId = 'targetChatId';
   static const String keyMaxAgeMinutes = 'maxAgeMinutes';
   static const String keyFolderId = 'folderId';
@@ -78,7 +77,6 @@ class SettingsStore {
       folderId: (folderId ?? -1) < 0 ? null : folderId,
       folderName: _prefs.getString(keyFolderName) ?? '',
       keywords: _prefs.getStringList(keyKeywords) ?? const <String>[],
-      botToken: _prefs.getString(keyBotToken) ?? '',
       targetChatId: _prefs.getString(keyTargetChatId) ?? '',
       maxAgeMinutes:
           _prefs.getInt(keyMaxAgeMinutes) ?? MonitorConfig.defaultMaxAgeMinutes,
@@ -93,7 +91,6 @@ class SettingsStore {
       keyKeywords,
       KeywordMatcher.sanitize(config.keywords),
     );
-    await _prefs.setString(keyBotToken, config.botToken);
     await _prefs.setString(keyTargetChatId, config.targetChatId);
     await _prefs.setInt(
       keyMaxAgeMinutes,

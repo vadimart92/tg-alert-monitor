@@ -10,10 +10,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
-import '../core/bot/bot_api.dart';
 import '../core/ipc/protocol.dart';
 import '../core/storage/match_log.dart';
 import '../core/storage/settings_store.dart';
@@ -37,7 +35,6 @@ class MonitorTaskHandler extends TaskHandler {
 
   AppLogger? _logger;
   MatchLog? _matchLog;
-  http.Client? _httpClient;
   TdClient? _client;
   MonitorEngine? _engine;
 
@@ -105,7 +102,6 @@ class MonitorTaskHandler extends TaskHandler {
     _matchLog = MatchLog(File('${supportDir.path}/matches.jsonl'));
 
     final config = settings.readConfig();
-    logger.addSecret(config.botToken);
 
     // Prove the native library loads before anything depends on it: a missing
     // or unusable libtdjson.so must be visible in the log immediately, not
@@ -119,7 +115,6 @@ class MonitorTaskHandler extends TaskHandler {
       return;
     }
 
-    _httpClient = http.Client();
     final transport = await IsolateTdTransport.start(
       onFatal: (message) {
         logger.error('receive isolate: $message');
@@ -139,7 +134,6 @@ class MonitorTaskHandler extends TaskHandler {
         systemVersion: 'Android ${Platform.operatingSystemVersion}',
         applicationVersion: '1.0.0',
       ),
-      botApiFactory: (token) => HttpBotApi(_httpClient!, token),
       matchLog: _matchLog!,
       logger: logger,
       emit: _send,
@@ -388,10 +382,8 @@ class MonitorTaskHandler extends TaskHandler {
       await client.close();
     }
 
-    _httpClient?.close();
     _engine = null;
     _client = null;
-    _httpClient = null;
   }
 
   @override

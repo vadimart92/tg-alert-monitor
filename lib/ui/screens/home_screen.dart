@@ -458,8 +458,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (!bridge.isReady) 'потрібен вхід у Telegram',
       if (_config.folderId == null) 'не вибрано папку',
       if (_includes.isEmpty) 'немає ключових слів',
-      if (_config.botToken.isEmpty || _config.targetChatId.isEmpty)
-        'не заповнені токен бота і цільовий чат',
+      if (_config.targetChatId.isEmpty) 'не вибрано цільовий канал',
       if (!_notificationsGranted) 'не надано дозвіл на сповіщення',
     ];
 

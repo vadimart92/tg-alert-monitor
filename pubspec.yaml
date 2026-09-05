@@ -19,8 +19,6 @@ dependencies:
   path_provider: ^2.1.0
   # Configuration, shared between the UI and the service isolate.
   shared_preferences: ^2.5.0
-  # Telegram Bot API calls.
-  http: ^1.2.0
 
 dev_dependencies:
   flutter_test:

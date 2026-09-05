@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tg_alert_monitor/core/bot/bot_api.dart';
 import 'package:tg_alert_monitor/core/ipc/protocol.dart';
 import 'package:tg_alert_monitor/core/model/app_config.dart';
 import 'package:tg_alert_monitor/core/model/match_entry.dart';
@@ -15,7 +14,6 @@ class Harness {
     this.transport,
     this.client,
     this.engine,
-    this.bot,
     this.matchLog,
     this.clock,
     this.events,
@@ -26,7 +24,6 @@ class Harness {
   final FakeTdTransport transport;
   final TdClient client;
   final MonitorEngine engine;
-  final FakeBotApi bot;
   final FakeMatchSink matchLog;
   final FakeClock clock;
   final List<Event> events;
@@ -42,7 +39,6 @@ class Harness {
       transport,
       defaultTimeout: const Duration(seconds: 5),
     );
-    final bot = FakeBotApi();
     final matchLog = FakeMatchSink();
     final clock = FakeClock(DateTime.utc(2026, 9, 5, 7, 0));
     final events = <Event>[];
@@ -59,7 +55,6 @@ class Harness {
         databaseDirectory: '/tmp/db',
         filesDirectory: '/tmp/files',
       ),
-      botApiFactory: (_) => bot,
       matchLog: matchLog,
       logger: AppLogger(),
       emit: events.add,
@@ -77,7 +72,6 @@ class Harness {
       transport,
       client,
       engine,
-      bot,
       matchLog,
       clock,
       events,
@@ -108,6 +102,7 @@ class Harness {
     transport.responders['logOut'] = (_) => {'@type': 'ok'};
     transport.responders['getMe'] = (_) => {
       '@type': 'user',
+      'id': 777,
       'first_name': 'Вадим',
       'last_name': 'А',
     };
@@ -135,6 +130,17 @@ class Harness {
         'rights': {'can_post_messages': true},
       },
     };
+    transport.responders['forwardMessages'] = (_) => {
+      '@type': 'messages',
+      'total_count': 1,
+      'messages': [
+        {'@type': 'message', 'id': 4194304},
+      ],
+    };
+    transport.responders['sendMessage'] = (_) => {
+      '@type': 'message',
+      'id': 4194304,
+    };
     transport.responders['getMessageLink'] = (request) => {
       '@type': 'messageLink',
       'link': 'https://t.me/c/111/${request['message_id']}',
@@ -143,6 +149,17 @@ class Harness {
   }
 
   Future<void> settle() => pumpEventQueue();
+
+  /// Originals forwarded through the owner's session.
+  List<Map<String, dynamic>> get forwards =>
+      transport.sentOfType('forwardMessages');
+
+  /// Messages composed by us: the tag line, or a copy when forwarding failed.
+  List<Map<String, dynamic>> get texts => transport.sentOfType('sendMessage');
+
+  String textOf(Map<String, dynamic> request) =>
+      ((request['input_message_content'] as Map)['text'] as Map)['text']
+          as String;
 
   List<Event> eventsOf(String name) => [
     for (final event in events)
@@ -193,7 +210,6 @@ const MonitorConfig _runnableConfig = MonitorConfig(
   folderId: 7,
   folderName: 'Тривога',
   keywords: ['шахед', 'тест-ключ'],
-  botToken: '123456:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
   targetChatId: '-100999',
   maxAgeMinutes: 10,
   chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
@@ -491,20 +507,24 @@ void main() {
       return harness;
     }
 
-    test('a keyword hit in a folder chat is forwarded once', () async {
+    test('the original is forwarded, with the tag underneath', () async {
       final harness = await monitoring();
 
       harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
       await harness.settle();
 
-      expect(harness.bot.sentMessages, hasLength(1));
-      final sent = harness.bot.sentMessages.single;
-      expect(sent.chatId, '-100999');
-      expect(sent.html, contains('Шахед над містом'));
-      // The matched keyword is tagged so the target channel stays searchable.
-      expect(sent.html, contains('#шахед'));
-      expect(sent.html, contains('https://t.me/c/111/1000'));
-      expect(sent.html, contains('<b>'));
+      // The original goes across as a real forward, not as retyped text.
+      expect(harness.forwards, hasLength(1));
+      final forward = harness.forwards.single;
+      expect(forward['chat_id'], -100999);
+      expect(forward['from_chat_id'], -100111);
+      expect(forward['message_ids'], [1000]);
+      expect(forward['send_copy'], false);
+
+      // ...followed by the tag as its own short message.
+      expect(harness.texts, hasLength(1));
+      expect(harness.textOf(harness.texts.single), '#шахед');
+      expect(harness.texts.single['chat_id'], -100999);
 
       expect(harness.matchLog.appended, hasLength(1));
       expect(harness.matchLog.appended.single.keywords, ['шахед']);
@@ -512,6 +532,70 @@ void main() {
       expect(harness.engine.matchCount, 1);
 
       await harness.settle();
+      expect(harness.matchLog.statusUpdates.single.status, MatchStatus.sent);
+      await harness.dispose();
+    });
+
+    test('a channel that forbids forwarding falls back to a copy', () async {
+      final harness = await monitoring();
+      harness.transport.responders['forwardMessages'] = (_) => {
+        '@type': 'error',
+        'code': 400,
+        'message': 'CHAT_FORWARDS_RESTRICTED',
+      };
+
+      harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
+      await harness.settle();
+
+      // The alert still arrives, as our own rendering.
+      expect(harness.texts, hasLength(1));
+      final body = harness.textOf(harness.texts.single);
+      expect(body, contains('Шахед над містом'));
+      expect(body, contains('#шахед'));
+      expect(body, contains('https://t.me/c/111/1000'));
+      // Sent as plain text, so no raw markup leaks through.
+      expect(body, isNot(contains('<b>')));
+      expect(harness.matchLog.statusUpdates.single.status, MatchStatus.sent);
+      await harness.dispose();
+    });
+
+    test('a target we may not post into is a permanent failure', () async {
+      final harness = await monitoring();
+      harness.transport.responders['forwardMessages'] = (_) => {
+        '@type': 'error',
+        'code': 400,
+        'message': 'CHAT_WRITE_FORBIDDEN',
+      };
+      harness.transport.responders['sendMessage'] = (_) => {
+        '@type': 'error',
+        'code': 400,
+        'message': 'CHAT_WRITE_FORBIDDEN',
+      };
+
+      harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
+      await harness.settle();
+      await harness.settle();
+
+      expect(harness.matchLog.statusUpdates.single.status, MatchStatus.failed);
+      expect(
+        harness.matchLog.statusUpdates.single.error,
+        contains('права публікувати'),
+      );
+      await harness.dispose();
+    });
+
+    test('a failed tag does not fail the delivered forward', () async {
+      final harness = await monitoring();
+      harness.transport.responders['sendMessage'] = (_) => {
+        '@type': 'error',
+        'code': 400,
+        'message': 'SOMETHING_ELSE',
+      };
+
+      harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
+      await harness.settle();
+
+      expect(harness.forwards, hasLength(1));
       expect(harness.matchLog.statusUpdates.single.status, MatchStatus.sent);
       await harness.dispose();
     });
@@ -534,7 +618,7 @@ void main() {
       });
       await harness.settle();
 
-      expect(harness.bot.sentMessages, hasLength(1));
+      expect(harness.forwards, hasLength(1));
       await harness.dispose();
     });
 
@@ -564,7 +648,7 @@ void main() {
         harness.transport.push(scenario.$2(harness));
         await harness.settle();
 
-        expect(harness.bot.sentMessages, isEmpty, reason: scenario.$1);
+        expect(harness.forwards, isEmpty, reason: scenario.$1);
         expect(harness.matchLog.appended, isEmpty, reason: scenario.$1);
         await harness.dispose();
       }
@@ -584,7 +668,7 @@ void main() {
       });
       await harness.settle();
 
-      expect(harness.bot.sentMessages, isEmpty);
+      expect(harness.forwards, isEmpty);
       await harness.dispose();
     });
 
@@ -596,7 +680,7 @@ void main() {
       harness.transport.push(harness.textMessage(messageId: 7777));
       await harness.settle();
 
-      expect(harness.bot.sentMessages, hasLength(1));
+      expect(harness.forwards, hasLength(1));
       expect(harness.matchLog.appended, hasLength(1));
       await harness.dispose();
     });
@@ -617,7 +701,7 @@ void main() {
       });
       await harness.settle();
 
-      expect(harness.bot.sentMessages, hasLength(1));
+      expect(harness.forwards, hasLength(1));
       await harness.dispose();
     });
 
@@ -636,27 +720,6 @@ void main() {
       expect(harness.matchLog.appended.single.link, 'https://t.me/c/111/55');
       await harness.dispose();
     });
-
-    test('a permanent Bot API failure is recorded as failed', () async {
-      final harness = await monitoring();
-      harness.bot.sendError = BotApiException(
-        description: 'Forbidden',
-        httpStatus: 403,
-      );
-
-      harness.transport.push(harness.textMessage(messageId: 9999));
-      await harness.settle();
-      await harness.settle();
-
-      expect(harness.matchLog.statusUpdates.single.status, MatchStatus.failed);
-      final statusEvent = harness.eventsOf(Ev.matchStatus).last;
-      expect(statusEvent.field<String>('status'), 'failed');
-      expect(
-        harness.eventsOf(Ev.error).last.field<String>('scope'),
-        ErrorScope.bot,
-      );
-      await harness.dispose();
-    });
   });
 
   // --- (d) stop ------------------------------------------------------------
@@ -669,7 +732,7 @@ void main() {
 
       harness.transport.push(harness.textMessage(messageId: 1));
       await harness.settle();
-      expect(harness.bot.sentMessages, hasLength(1));
+      expect(harness.forwards, hasLength(1));
 
       await harness.engine.handleCommand(Command(Cmd.monitorStop));
       await harness.settle();
@@ -677,7 +740,7 @@ void main() {
       harness.transport.push(harness.textMessage(messageId: 2));
       await harness.settle();
 
-      expect(harness.bot.sentMessages, hasLength(1));
+      expect(harness.forwards, hasLength(1));
       expect(harness.engine.isMonitoring, isFalse);
       expect(harness.monitoringFlags.last, isFalse);
       await harness.dispose();
@@ -709,7 +772,7 @@ void main() {
       harness.transport.push(harness.textMessage());
       await harness.settle();
 
-      expect(harness.bot.sentMessages, isEmpty);
+      expect(harness.forwards, isEmpty);
       await harness.dispose();
     });
   });
@@ -842,336 +905,97 @@ void main() {
   });
 
   // --- bot checks ----------------------------------------------------------
-  group('bot commands', () {
-    test('bot.check reports the bot and channel names', () async {
-      final harness = await Harness.create();
-      await harness.engine.handleCommand(
-        Command(Cmd.botCheck, {'botToken': '1:aa', 'targetChatId': '-100999'}),
-      );
-      await harness.settle();
-
-      final info = harness.eventsOf(Ev.botInfo).last;
-      expect(info.field<String>('botName'), 'Test Bot');
-      expect(info.field<String>('chatTitle'), 'Target');
-      await harness.dispose();
-    });
-
-    test('bot.check surfaces a bad token as a bot-scoped error', () async {
-      final harness = await Harness.create();
-      harness.bot.getMeError = BotApiException(
-        description: 'Unauthorized',
-        httpStatus: 401,
-      );
-
-      await harness.engine.handleCommand(
-        Command(Cmd.botCheck, {'botToken': 'bad', 'targetChatId': '-1'}),
-      );
-      await harness.settle();
-
-      final error = harness.eventsOf(Ev.error).last;
-      expect(error.field<String>('scope'), ErrorScope.bot);
-      expect(error.field<String>('message'), contains('Невірний токен'));
-      await harness.dispose();
-    });
-
-    test('bot.test posts a test message', () async {
-      final harness = await Harness.create();
-      await harness.engine.handleCommand(
-        Command(Cmd.botTest, {'botToken': '1:aa', 'targetChatId': '-100999'}),
-      );
-      await harness.settle();
-
-      expect(
-        harness.bot.sentMessages.single.html,
-        contains('TG Alert Monitor'),
-      );
-      expect(harness.bot.sentMessages.single.chatId, '-100999');
-      await harness.dispose();
-    });
-  });
-
-  // --- live configuration edits -------------------------------------------
-  group('live config updates', () {
-    Future<Harness> monitoringHarness() async {
+  group('target channel commands', () {
+    test('bot.check names the target channel', () async {
       final harness = await Harness.create(config: _runnableConfig);
       await harness.authenticate();
-      await harness.engine.startMonitoring(_runnableConfig);
-      await harness.settle();
-      return harness;
-    }
-
-    test('a keyword added while monitoring takes effect immediately', () async {
-      final harness = await monitoringHarness();
-
-      harness.transport.push(
-        harness.textMessage(messageId: 1, text: 'ракета над містом'),
-      );
-      await harness.settle();
-      expect(harness.bot.sentMessages, isEmpty);
 
       await harness.engine.handleCommand(
-        Command(Cmd.monitorConfig, {
-          'config': _runnableConfig
-              .copyWith(keywords: ['шахед', 'тест-ключ', 'ракета'])
-              .toJson(),
-        }),
+        Command(Cmd.botCheck, {'targetChatId': '-100999'}),
       );
       await harness.settle();
 
-      harness.transport.push(
-        harness.textMessage(messageId: 2, text: 'ракета над містом'),
+      expect(
+        harness.eventsOf(Ev.botInfo).last.field<String>('chatTitle'),
+        'Канал -100999',
       );
-      await harness.settle();
-
-      expect(harness.bot.sentMessages, hasLength(1));
-      expect(harness.matchLog.appended.single.keywords, ['ракета']);
-      expect(harness.engine.isMonitoring, isTrue);
       await harness.dispose();
     });
 
-    test('a removed keyword stops matching immediately', () async {
-      final harness = await monitoringHarness();
-
-      await harness.engine.handleCommand(
-        Command(Cmd.monitorConfig, {
-          'config': _runnableConfig.copyWith(keywords: ['тест-ключ']).toJson(),
-        }),
-      );
-      await harness.settle();
-
-      harness.transport.push(harness.textMessage(text: 'шахед над містом'));
-      await harness.settle();
-
-      expect(harness.bot.sentMessages, isEmpty);
-      await harness.dispose();
-    });
-
-    test(
-      'a config edit neither restarts monitoring nor clears counters',
-      () async {
-        final harness = await monitoringHarness();
-        harness.transport.push(harness.textMessage(messageId: 1));
-        await harness.settle();
-        expect(harness.engine.matchCount, 1);
-
-        await harness.engine.handleCommand(
-          Command(Cmd.monitorConfig, {
-            'config': _runnableConfig.copyWith(keywords: ['шахед']).toJson(),
-          }),
-        );
-        await harness.settle();
-
-        expect(harness.engine.isMonitoring, isTrue);
-        expect(harness.engine.matchCount, 1);
-        expect(harness.monitoringFlags, everyElement(isTrue));
-        await harness.dispose();
-      },
-    );
-
-    test('the resolved chat list survives a config edit', () async {
-      final harness = await monitoringHarness();
-      expect(harness.engine.chatCount, 1);
-
-      // The UI sends a config with no cached chats, as it does after an edit.
-      await harness.engine.handleCommand(
-        Command(Cmd.monitorConfig, {
-          'config': _runnableConfig
-              .copyWith(keywords: ['шахед'], chats: const [])
-              .toJson(),
-        }),
-      );
-      await harness.settle();
-
-      expect(harness.engine.chatCount, 1);
-      harness.transport.push(harness.textMessage(messageId: 9));
-      await harness.settle();
-      expect(harness.bot.sentMessages, hasLength(1));
-      await harness.dispose();
-    });
-
-    test('a later folder refresh does not write stale keywords back', () async {
-      final harness = await monitoringHarness();
-
-      await harness.engine.handleCommand(
-        Command(Cmd.monitorConfig, {
-          'config': _runnableConfig.copyWith(keywords: ['новий']).toJson(),
-        }),
-      );
-      await harness.settle();
-      expect(harness.savedConfigs.last.keywords, ['новий']);
-
-      harness.clock.advance(const Duration(minutes: 31));
-      await harness.engine.tick();
-      await harness.settle();
-      expect(harness.savedConfigs.last.keywords, ['новий']);
-      await harness.dispose();
-    });
-
-    test('switching folders re-resolves against the new folder', () async {
-      final harness = await monitoringHarness();
-      harness.transport.clearSent();
-
-      await harness.engine.handleCommand(
-        Command(Cmd.monitorConfig, {
-          'config': _runnableConfig
-              .copyWith(folderId: 9, chats: const [])
-              .toJson(),
-        }),
-      );
-      await harness.settle();
-
-      expect(harness.transport.hasSent('getChats'), isTrue);
-      expect(harness.transport.sentOfType('getChats').last['chat_list'], {
-        '@type': 'chatListFolder',
-        'chat_folder_id': 9,
-      });
-      await harness.dispose();
-    });
-  });
-
-  // --- target channel discovery -------------------------------------------
-  group('bot target discovery', () {
-    test('lists channels where the bot can post', () async {
-      final harness = await Harness.create(
-        folderChatIds: const [-100111, -100222],
-      );
+    test('bot.check reports a target we cannot reach', () async {
+      final harness = await Harness.create(config: _runnableConfig);
       await harness.authenticate();
-
-      await harness.engine.handleCommand(
-        Command(Cmd.botTargets, {'botToken': '1:aa'}),
-      );
-      await harness.settle();
-
-      final event = harness.eventsOf(Ev.botTargets).last;
-      expect(event.data['items'], [
-        {'id': -100111, 'title': 'Канал -100111', 'isChannel': true},
-        {'id': -100222, 'title': 'Канал -100222', 'isChannel': true},
-      ]);
-      // The bot is looked up by its numeric id from getMe.
-      expect(harness.transport.sentOfType('getChatMember').first['member_id'], {
-        '@type': 'messageSenderUser',
-        'user_id': 424242,
-      });
-      await harness.dispose();
-    });
-
-    test('skips channels the bot cannot post in', () async {
-      final harness = await Harness.create(
-        folderChatIds: const [-100111, -100222],
-      );
-      await harness.authenticate();
-
-      harness.transport.responders['getChatMember'] = (request) {
-        if (request['chat_id'] == -100111) {
-          return {
-            '@type': 'chatMember',
-            'status': {
-              '@type': 'chatMemberStatusAdministrator',
-              'rights': {'can_post_messages': false},
-            },
-          };
-        }
-        return {
-          '@type': 'chatMember',
-          'status': {'@type': 'chatMemberStatusCreator'},
-        };
+      harness.transport.responders['getChat'] = (_) => {
+        '@type': 'error',
+        'code': 400,
+        'message': 'Chat not found',
       };
 
       await harness.engine.handleCommand(
-        Command(Cmd.botTargets, {'botToken': '1:aa'}),
+        Command(Cmd.botCheck, {'targetChatId': '-100999'}),
       );
       await harness.settle();
 
-      final items = harness.eventsOf(Ev.botTargets).last.data['items'] as List;
-      expect(items.map((i) => (i as Map)['id']), [-100222]);
-      await harness.dispose();
-    });
-
-    test(
-      'a channel the owner does not administer is skipped, not fatal',
-      () async {
-        final harness = await Harness.create(
-          folderChatIds: const [-100111, -100222],
-        );
-        await harness.authenticate();
-
-        harness.transport.responders['getChatMember'] = (request) =>
-            request['chat_id'] == -100111
-            ? {'@type': 'error', 'code': 400, 'message': 'CHAT_ADMIN_REQUIRED'}
-            : {
-                '@type': 'chatMember',
-                'status': {'@type': 'chatMemberStatusCreator'},
-              };
-
-        await harness.engine.handleCommand(
-          Command(Cmd.botTargets, {'botToken': '1:aa'}),
-        );
-        await harness.settle();
-
-        final items =
-            harness.eventsOf(Ev.botTargets).last.data['items'] as List;
-        expect(items.map((i) => (i as Map)['id']), [-100222]);
-        await harness.dispose();
-      },
-    );
-
-    test('non-channel chats are never offered as targets', () async {
-      final harness = await Harness.create(folderChatIds: const [555]);
-      await harness.authenticate();
-
-      harness.transport.responders['getChat'] = (request) => {
-        '@type': 'chat',
-        'id': request['chat_id'],
-        'title': 'Приватний чат',
-        'type': {'@type': 'chatTypePrivate'},
-      };
-
-      await harness.engine.handleCommand(
-        Command(Cmd.botTargets, {'botToken': '1:aa'}),
-      );
-      await harness.settle();
-
-      expect(harness.eventsOf(Ev.botTargets).last.data['items'], isEmpty);
-      expect(harness.transport.hasSent('getChatMember'), isFalse);
-      await harness.dispose();
-    });
-
-    test(
-      'discovery before login reports an error instead of an empty list',
-      () async {
-        final harness = await Harness.create();
-
-        await harness.engine.handleCommand(
-          Command(Cmd.botTargets, {'botToken': '1:aa'}),
-        );
-        await harness.settle();
-
-        expect(harness.eventsOf(Ev.botTargets), isEmpty);
-        expect(
-          harness.eventsOf(Ev.error).last.field<String>('message'),
-          contains('увійдіть у Telegram'),
-        );
-        await harness.dispose();
-      },
-    );
-
-    test('a bad bot token surfaces as a bot error', () async {
-      final harness = await Harness.create();
-      await harness.authenticate();
-      harness.bot.getMeError = BotApiException(
-        description: 'Unauthorized',
-        httpStatus: 401,
-      );
-
-      await harness.engine.handleCommand(
-        Command(Cmd.botTargets, {'botToken': 'bad'}),
-      );
-      await harness.settle();
-
-      expect(harness.eventsOf(Ev.botTargets), isEmpty);
       expect(
         harness.eventsOf(Ev.error).last.field<String>('message'),
-        contains('Невірний токен'),
+        contains('не знайдено'),
+      );
+      await harness.dispose();
+    });
+
+    test('bot.test posts down the real delivery path', () async {
+      final harness = await Harness.create(config: _runnableConfig);
+      await harness.authenticate();
+
+      await harness.engine.handleCommand(
+        Command(Cmd.botTest, {'targetChatId': '-100999'}),
+      );
+      await harness.settle();
+
+      // Sent through the owner's session, exactly like a real alert.
+      expect(harness.texts, hasLength(1));
+      expect(harness.texts.single['chat_id'], -100999);
+      expect(
+        harness.textOf(harness.texts.single),
+        contains('TG Alert Monitor'),
+      );
+      await harness.dispose();
+    });
+
+    test('a @username target is resolved before posting', () async {
+      final harness = await Harness.create(config: _runnableConfig);
+      await harness.authenticate();
+      harness.transport.responders['searchPublicChat'] = (_) => {
+        '@type': 'chat',
+        'id': -100777,
+        'title': 'Публічний канал',
+      };
+
+      await harness.engine.handleCommand(
+        Command(Cmd.botTest, {'targetChatId': '@alerts'}),
+      );
+      await harness.settle();
+
+      expect(
+        harness.transport.sentOfType('searchPublicChat').single['username'],
+        'alerts',
+      );
+      expect(harness.texts.single['chat_id'], -100777);
+      await harness.dispose();
+    });
+
+    test('a test before login is refused with a clear reason', () async {
+      final harness = await Harness.create(config: _runnableConfig);
+
+      await harness.engine.handleCommand(
+        Command(Cmd.botTest, {'targetChatId': '-100999'}),
+      );
+      await harness.settle();
+
+      expect(harness.texts, isEmpty);
+      expect(
+        harness.eventsOf(Ev.error).last.field<String>('message'),
+        contains('увійдіть у Telegram'),
       );
       await harness.dispose();
     });
