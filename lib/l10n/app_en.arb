@@ -284,5 +284,6 @@
   "botTokenInvalid": "That does not look like a token: 123456:AA… is expected",
 
   "diagKeywordsInForce": "Words the service is searching for: {keywords}",
-  "diagNoKeywords": "The service has no keywords at all — which is exactly why nothing fires."
+  "diagNoKeywords": "The service has no keywords at all — which is exactly why nothing fires.",
+  "matchChannelFallbackName": "Matches (fallback sound)"
 }

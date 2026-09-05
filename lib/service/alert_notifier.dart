@@ -7,6 +7,7 @@ library;
 
 import 'dart:ui' show Color;
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../core/bot/message_formatter.dart';
@@ -15,13 +16,23 @@ import '../l10n/app_localizations.dart';
 
 /// Shows one heads-up notification per match and plays the siren.
 ///
-/// The sound is bound to the notification channel, not to the individual
-/// notification — that is how Android 8+ works, so it is Android that plays
-/// `res/raw/siren_ostap_calm.ogg`, and it keeps playing even when our isolate
-/// is being throttled.
+/// The siren is played by the app rather than by the notification channel.
+/// Channel sound is the tidier mechanism and it does work — but only while the
+/// phone is not silenced. Measured on a Galaxy S10 (One UI, Android 12) with
+/// the channel set exactly as intended (importance max, USAGE_ALARM, alarm
+/// volume 11/15, Do Not Disturb off, the alarm stream not among the streams
+/// the ringer mode mutes): in Mute mode the system still refuses to play a
+/// notification's sound. That refusal is the vendor's, above our channel, and
+/// nothing about the channel can talk it out of it.
 ///
-/// The channel is registered with alarm audio attributes: an air-raid alert
-/// that stays silent because the phone is on vibrate would be worthless.
+/// Playing the audio ourselves goes around it entirely: it is an ordinary
+/// stream on USAGE_ALARM, which no ringer mode mutes. An air-raid alert that
+/// stays quiet because the phone was silenced would be worthless.
+///
+/// So the notification carries the sight and this class carries the sound —
+/// with one exception: if playback fails, the alert falls back to the
+/// sounding channel, because a siren the vendor might suppress still beats no
+/// siren at all.
 class AlertNotifier {
   AlertNotifier({
     required L strings,
@@ -30,20 +41,27 @@ class AlertNotifier {
   }) : _s = strings,
        _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
-  /// Bumped whenever the channel's sound, importance or audio attributes
-  /// change: Android freezes all of them at creation time and ignores later
-  /// edits, so a fix only reaches an existing install under a new id.
-  ///
-  /// v2: the first version was created on a build where the sound resource
-  /// was missing from the release APK, so those installs hold a channel whose
-  /// sound never got set and can never be corrected in place.
-  static const String channelId = 'tg_alert_matches_v2';
+  /// The normal channel: silent, because this class plays the siren itself.
+  static const String channelId = 'tg_alert_matches_quiet_v1';
+
+  /// Used only when playing the siren ourselves failed, so that the alert
+  /// still makes whatever noise the system is willing to make.
+  static const String fallbackChannelId = 'tg_alert_matches_v2';
 
   /// Superseded ids, deleted on startup so they stop cluttering the system
   /// notification settings with channels that do nothing.
+  ///
+  /// A channel's sound, importance and audio attributes are frozen when
+  /// Android first creates it and every later edit is ignored, so a change to
+  /// any of them needs a new id and a funeral for the old one.
   static const List<String> retiredChannelIds = ['tg_alert_matches_v1'];
 
+  /// Kept for the fallback channel, and so the sound is still a resource the
+  /// system can reach on its own.
   static const String soundResource = 'siren_ostap_calm';
+
+  /// What the app plays itself, straight from the Flutter assets.
+  static const String soundAsset = 'siren_ostap_calm.ogg';
 
   /// An air-raid alert should look like one. Tints the icon and the app name
   /// in the shade, and the notification light where there is one.
@@ -56,21 +74,32 @@ class AlertNotifier {
   final L _s;
   final void Function(String message)? onLog;
 
+  /// Built on first use: constructing a player costs a platform call, and most
+  /// runs of this app never raise a single alert.
+  AudioPlayer? _player;
+
   bool _initialised = false;
 
   /// One id per match, so a second alert does not replace the first.
   int _nextId = 1;
 
-  AndroidNotificationChannel get _channel => AndroidNotificationChannel(
+  AndroidNotificationChannel get _quietChannel => AndroidNotificationChannel(
     channelId,
     _s.matchChannelName,
     description: _s.matchChannelDescription,
     importance: Importance.max,
+    // The siren comes from the app, so the channel must not add a second one.
+    playSound: false,
+    enableLights: true,
+    ledColor: alertColor,
+  );
+
+  AndroidNotificationChannel get _fallbackChannel => AndroidNotificationChannel(
+    fallbackChannelId,
+    _s.matchChannelFallbackName,
+    description: _s.matchChannelDescription,
+    importance: Importance.max,
     sound: const RawResourceAndroidNotificationSound(soundResource),
-    // The alarm usage is what carries the siren past a silenced ringer: it
-    // plays on the alarm stream, which silent and vibrate modes do not mute.
-    // Do Not Disturb still silences it — bypassing that needs a permission
-    // the owner has to grant by hand, so it is not taken here.
     audioAttributesUsage: AudioAttributesUsage.alarm,
     enableLights: true,
     ledColor: alertColor,
@@ -88,7 +117,8 @@ class AlertNotifier {
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
-    await android?.createNotificationChannel(_channel);
+    await android?.createNotificationChannel(_quietChannel);
+    await android?.createNotificationChannel(_fallbackChannel);
     for (final retired in retiredChannelIds) {
       try {
         await android?.deleteNotificationChannel(channelId: retired);
@@ -99,24 +129,52 @@ class AlertNotifier {
     _initialised = true;
   }
 
+  /// Plays the siren on the alarm stream. Returns whether it started.
+  ///
+  /// The alarm usage is the whole point: a ringer set to silent or vibrate
+  /// mutes the ring and notification streams, never the alarm one.
+  Future<bool> _playSiren() async {
+    try {
+      final player = _player ??= AudioPlayer();
+      await player.setAudioContext(
+        AudioContext(
+          android: const AudioContextAndroid(
+            usageType: AndroidUsageType.alarm,
+            contentType: AndroidContentType.sonification,
+            audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          ),
+        ),
+      );
+      await player.play(AssetSource(soundAsset));
+      return true;
+    } catch (error) {
+      onLog?.call('siren playback failed: $error');
+      return false;
+    }
+  }
+
   /// Posts one alert. Never throws: a failed notification must not stop the
   /// match from being logged or forwarded.
   Future<void> notify(MatchEntry entry) async {
     try {
       await init();
+      final played = await _playSiren();
       await _plugin.show(
         id: _nextId++,
         title: '🔴 ${entry.chatTitle.isEmpty ? _s.match : entry.chatTitle}',
         body: _body(entry),
         notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
-            channelId,
-            _s.matchChannelName,
+            played ? channelId : fallbackChannelId,
+            played ? _s.matchChannelName : _s.matchChannelFallbackName,
             importance: Importance.max,
             priority: Priority.high,
             category: AndroidNotificationCategory.alarm,
             audioAttributesUsage: AudioAttributesUsage.alarm,
-            sound: const RawResourceAndroidNotificationSound(soundResource),
+            playSound: !played,
+            sound: played
+                ? null
+                : const RawResourceAndroidNotificationSound(soundResource),
             color: alertColor,
             colorized: true,
             enableLights: true,

@@ -1360,7 +1360,10 @@ void main() {
       await harness.dispose();
     });
 
-    test('a failed getMessageLink falls back to a t.me/c link', () async {
+    test('a failed getMessageLink falls back to the public username', () async {
+      // Every getMessageLink call was failing on the device, which sent every
+      // alert down the t.me/c form — and Telegram previews nothing behind
+      // /c/, so the bot's link preview was lost for public channels too.
       final harness = await monitoring();
       harness.transport.responders['getMessageLink'] = (_) => {
         '@type': 'error',
@@ -1372,9 +1375,54 @@ void main() {
       harness.transport.push(harness.textMessage(messageId: 55 << 20));
       await harness.settle();
 
+      // channel_111 is the fake's username for the supergroup behind -100111.
+      expect(
+        harness.matchLog.appended.single.link,
+        'https://t.me/channel_111/55',
+      );
+      await harness.dispose();
+    });
+
+    test('a private chat falls back to the t.me/c form', () async {
+      final harness = await monitoring();
+      harness.transport.responders['getMessageLink'] = (_) => {
+        '@type': 'error',
+        'code': 400,
+        'message': 'MESSAGE_ID_INVALID',
+      };
+      // No username at all: nothing better than the private form exists.
+      harness.transport.responders['getSupergroup'] = (_) => {
+        '@type': 'supergroup',
+        'usernames': null,
+      };
+
+      harness.transport.push(harness.textMessage(messageId: 55 << 20));
+      await harness.settle();
+
       expect(harness.matchLog.appended.single.link, 'https://t.me/c/111/55');
       await harness.dispose();
     });
+
+    test(
+      'getMessageLink is asked with only the fields every schema has',
+      () async {
+        // The optional ones differ between TDLib releases, and one of them is a
+        // string in 1.8.65 — sending it as a number failed every call.
+        final harness = await monitoring();
+
+        harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
+        await harness.settle();
+
+        final request = harness.transport.sentOfType('getMessageLink').single;
+        expect(request.keys.toSet(), {
+          '@type',
+          'chat_id',
+          'message_id',
+          '@extra',
+        });
+        await harness.dispose();
+      },
+    );
   });
 
   // --- (d) stop ------------------------------------------------------------
