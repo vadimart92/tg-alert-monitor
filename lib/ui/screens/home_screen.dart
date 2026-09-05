@@ -8,6 +8,7 @@ import '../../core/ipc/protocol.dart';
 import '../../core/matcher/keyword_matcher.dart';
 import '../../core/model/app_config.dart';
 import '../../core/storage/settings_store.dart';
+import '../../l10n/app_localizations.dart';
 import '../../service/monitor_engine.dart';
 import '../service_bridge.dart';
 import 'log_screen.dart';
@@ -25,6 +26,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  /// Device-language strings, for every method on this state.
+  L get l => L.of(context);
+
   final _keywordController = TextEditingController();
   final _exclusionController = TextEditingController();
 
@@ -39,7 +43,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _config = widget.settings.readConfig();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await widget.bridge.ensureServiceRunning();
+      // Both need localised strings for the service notification, so they run
+      // from here rather than from `App`, which sits above `MaterialApp`.
+      ServiceBridge.initTask(l);
+      await widget.bridge.ensureServiceRunning(l);
       await _refreshPermissions();
     });
   }
@@ -130,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         title: const Text('TG Alert Monitor'),
         actions: [
           IconButton(
-            tooltip: 'Журнал',
+            tooltip: l.journal,
             icon: const Icon(Icons.receipt_long),
             onPressed: () => Navigator.push(
               context,
@@ -140,7 +147,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
           IconButton(
-            tooltip: 'Налаштування',
+            tooltip: l.settings,
             icon: const Icon(Icons.settings),
             onPressed: () async {
               await Navigator.push(
@@ -193,15 +200,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _statusCard(ServiceBridge bridge) {
     final connection = switch (bridge.connection) {
-      ConnectionPhase.ready => 'онлайн',
-      ConnectionPhase.updating => 'оновлення',
-      ConnectionPhase.waitingForNetwork => 'немає мережі',
-      _ => 'підключення…',
+      ConnectionPhase.ready => l.connectionReady,
+      ConnectionPhase.updating => l.connectionUpdating,
+      ConnectionPhase.waitingForNetwork => l.connectionNoNetwork,
+      _ => l.connectionConnecting,
     };
     final startedAt = bridge.startedAt;
     final monitoring = bridge.monitoring
-        ? 'активний${startedAt == null ? '' : ' з ${_hhmm(startedAt)}'}'
-        : 'зупинено';
+        ? (startedAt == null
+              ? l.monitoringActive
+              : l.monitoringActiveSince(_hhmm(startedAt)))
+        : l.monitoringStopped;
 
     return Card(
       child: Padding(
@@ -217,19 +226,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Моніторинг: $monitoring',
+                  l.monitoringStatus(monitoring),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ],
             ),
             const Divider(),
-            _row('Підключення', connection),
-            _row('Акаунт', bridge.userName.isEmpty ? '—' : bridge.userName),
-            _row('Чатів у папці', '${bridge.chatCount}'),
-            _row('Збігів за сесію', '${bridge.matchCount}'),
+            _row(l.rowConnection, connection),
             _row(
-              'Останній збіг',
-              bridge.lastMatchAt == null ? '—' : _hhmm(bridge.lastMatchAt!),
+              l.rowAccount,
+              bridge.userName.isEmpty ? l.dash : bridge.userName,
+            ),
+            _row(l.rowChatsInFolder, '${bridge.chatCount}'),
+            _row(l.rowMatchesThisSession, '${bridge.matchCount}'),
+            _row(
+              l.rowLastMatch,
+              bridge.lastMatchAt == null ? l.dash : _hhmm(bridge.lastMatchAt!),
             ),
             if (bridge.tdVersion.isNotEmpty) _row('TDLib', bridge.tdVersion),
           ],
@@ -241,7 +253,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _loginCard(ServiceBridge bridge) => Card(
     child: ListTile(
       leading: const Icon(Icons.login),
-      title: const Text('Потрібен вхід у Telegram'),
+      title: Text(l.signInRequired),
       subtitle: Text(_authLabel(bridge.auth)),
       trailing: const Icon(Icons.chevron_right),
       onTap: () => Navigator.push(
@@ -262,15 +274,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Папка', style: Theme.of(context).textTheme.titleMedium),
+            Text(l.folder, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             DropdownButtonFormField<int>(
               initialValue: bridge.folders.any((f) => f.id == _config.folderId)
                   ? _config.folderId
                   : null,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Папка Telegram',
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: l.telegramFolder,
               ),
               items: [
                 for (final folder in bridge.folders)
@@ -292,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             const SizedBox(height: 8),
             Row(
               children: [
-                Text('${chats.length} чатів'),
+                Text(l.chatCount(chats.length)),
                 const Spacer(),
                 TextButton(
                   onPressed: () {
@@ -305,7 +317,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     }
                     setState(() => _showChats = !_showChats);
                   },
-                  child: Text(_showChats ? 'Сховати чати' : 'Показати чати'),
+                  child: Text(_showChats ? l.hideChats : l.showChats),
                 ),
               ],
             ),
@@ -332,26 +344,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Ключові слова', style: Theme.of(context).textTheme.titleMedium),
+          Text(l.keywords, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
-          const Text(
-            'Повідомлення вважається збігом, якщо містить хоча б одне з цих '
-            'слів.',
-            style: TextStyle(fontSize: 12),
-          ),
+          Text(l.keywordsHelp, style: const TextStyle(fontSize: 12)),
           const SizedBox(height: 8),
           _chips(_includes, isExclusion: false),
           _addRow(
             controller: _keywordController,
-            hint: 'Напр. Зенітка',
+            hint: l.keywordHint,
             isExclusion: false,
           ),
           if (_includes.any(KeywordMatcher.isStemmed)) ...[
             const SizedBox(height: 4),
             Text(
-              'Сірим показано корінь, за яким шукаємо: він покриває відмінки '
-              '(«на Зенітку», «у Зенітці»). Щоб задати корінь самому, '
-              'введіть слово, що закінчується на приголосну.',
+              l.stemHelp,
               style: TextStyle(
                 fontSize: 11,
                 color: Theme.of(context).hintColor,
@@ -368,22 +374,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(width: 6),
               Text(
-                'Слова-винятки',
+                l.exclusions,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ],
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Якщо повідомлення містить таке слово, воно НЕ спрацьовує — '
-            'навіть якщо ключове слово теж є. Напр. «відбій», «збито».',
-            style: TextStyle(fontSize: 12),
-          ),
+          Text(l.exclusionsHelp, style: const TextStyle(fontSize: 12)),
           const SizedBox(height: 8),
           _chips(_exclusions, isExclusion: true),
           _addRow(
             controller: _exclusionController,
-            hint: 'Напр. відбій',
+            hint: l.exclusionHint,
             isExclusion: true,
           ),
         ],
@@ -398,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return Padding(
         padding: const EdgeInsets.only(bottom: 4),
         child: Text(
-          isExclusion ? 'Винятків немає' : 'Слів ще немає',
+          isExclusion ? l.noExclusionsYet : l.noKeywordsYet,
           style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
         ),
       );
@@ -441,7 +443,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: TextField(
           controller: controller,
           decoration: InputDecoration(
-            labelText: isExclusion ? 'Новий виняток' : 'Нове слово',
+            labelText: isExclusion ? l.newExclusion : l.newKeyword,
             hintText: hint,
             border: const OutlineInputBorder(),
             isDense: true,
@@ -465,11 +467,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final delivery = _config.delivery;
     final target = _targetLabel();
     final subtitle = switch (delivery) {
-      AlertDelivery.forward =>
-        'Оригінал пересилається в $target. Телефон мовчить.',
-      AlertDelivery.local =>
-        'Сирена і сповіщення на цьому телефоні. Нічого не пересилається.',
-      AlertDelivery.both => 'Пересилання в $target — і сирена тут.',
+      AlertDelivery.forward => l.deliveryForwardHelp(target),
+      AlertDelivery.local => l.deliveryLocalHelp,
+      AlertDelivery.both => l.deliveryBothHelp(target),
     };
 
     return Card(
@@ -478,27 +478,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Сповіщення', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              l.notifications,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: SegmentedButton<AlertDelivery>(
                 showSelectedIcon: false,
-                segments: const [
+                segments: [
                   ButtonSegment(
                     value: AlertDelivery.forward,
-                    icon: Icon(Icons.forward_to_inbox, size: 18),
-                    label: Text('Форвард'),
+                    icon: const Icon(Icons.forward_to_inbox, size: 18),
+                    label: Text(l.deliveryForward),
                   ),
                   ButtonSegment(
                     value: AlertDelivery.local,
-                    icon: Icon(Icons.notifications_active, size: 18),
-                    label: Text('Локально'),
+                    icon: const Icon(Icons.notifications_active, size: 18),
+                    label: Text(l.deliveryLocal),
                   ),
                   ButtonSegment(
                     value: AlertDelivery.both,
-                    icon: Icon(Icons.done_all, size: 18),
-                    label: Text('Обидва'),
+                    icon: const Icon(Icons.done_all, size: 18),
+                    label: Text(l.deliveryBoth),
                   ),
                 ],
                 selected: {delivery},
@@ -511,9 +514,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             if (delivery.notifies) ...[
               const SizedBox(height: 4),
               Text(
-                'Сирена звучить на гучності будильника, тож чути її й у '
-                'беззвучному режимі. Гучність і вібрацію можна змінити в '
-                'системних налаштуваннях каналу «Збіги за ключовими словами».',
+                l.sirenHelp(l.matchChannelName),
                 style: TextStyle(
                   fontSize: 11,
                   color: Theme.of(context).hintColor,
@@ -531,22 +532,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// the channel is picked.
   String _targetLabel() {
     final configured = _config.targetChatId.trim();
-    if (configured.isEmpty) return 'канал (ще не вибраний у налаштуваннях)';
+    if (configured.isEmpty) return l.targetNotPicked;
     final id = int.tryParse(configured);
     for (final target in widget.bridge.botTargets ?? const <ChatRef>[]) {
-      if (target.id == id && target.title.isNotEmpty) return '«${target.title}»';
+      if (target.id == id && target.title.isNotEmpty) {
+        return l.quoted(target.title);
+      }
     }
-    return '«$configured»';
+    return l.quoted(configured);
   }
 
   Widget _startStopCard(ServiceBridge bridge) {
     final reasons = <String>[
-      if (!bridge.isReady) 'потрібен вхід у Telegram',
-      if (_config.folderId == null) 'не вибрано папку',
-      if (_includes.isEmpty) 'немає ключових слів',
+      if (!bridge.isReady) l.reasonSignIn,
+      if (_config.folderId == null) l.reasonNoFolder,
+      if (_includes.isEmpty) l.reasonNoKeywords,
       if (_config.delivery.forwards && _config.targetChatId.isEmpty)
-        'не вибрано цільовий канал',
-      if (!_notificationsGranted) 'не надано дозвіл на сповіщення',
+        l.reasonNoTarget,
+      if (!_notificationsGranted) l.reasonNoNotificationPermission,
     ];
 
     return Card(
@@ -563,19 +566,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                       onPressed: _stop,
                       icon: const Icon(Icons.stop),
-                      label: const Text('Стоп'),
+                      label: Text(l.stop),
                     )
                   : FilledButton.icon(
                       onPressed: _canStart ? _start : null,
                       icon: const Icon(Icons.play_arrow),
-                      label: const Text('Старт'),
+                      label: Text(l.start),
                     ),
             ),
             if (!bridge.monitoring && reasons.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  'Неможливо стартувати: ${reasons.join(', ')}.',
+                  l.cannotStart(reasons.join(', ')),
                   style: const TextStyle(fontSize: 12),
                 ),
               ),
@@ -592,13 +595,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Дозволи', style: Theme.of(context).textTheme.titleMedium),
+          Text(l.permissions, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           if (!_notificationsGranted) ...[
-            const Text(
-              'Сповіщення потрібні, щоб Android дозволив фоновому сервісу '
-              'працювати з вимкненим екраном.',
-              style: TextStyle(fontSize: 12),
+            Text(
+              l.notificationPermissionHelp,
+              style: const TextStyle(fontSize: 12),
             ),
             const SizedBox(height: 4),
             OutlinedButton(
@@ -606,23 +608,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 await FlutterForegroundTask.requestNotificationPermission();
                 await _refreshPermissions();
               },
-              child: const Text('Дозволити сповіщення'),
+              child: Text(l.allowNotifications),
             ),
           ],
           if (!_batteryUnrestricted) ...[
             const SizedBox(height: 8),
-            const Text(
-              'Без вимкненої оптимізації батареї система може зупинити '
-              'моніторинг уночі.',
-              style: TextStyle(fontSize: 12),
-            ),
+            Text(l.batteryHelp, style: const TextStyle(fontSize: 12)),
             const SizedBox(height: 4),
             OutlinedButton(
               onPressed: () async {
                 await FlutterForegroundTask.requestIgnoreBatteryOptimization();
                 await _refreshPermissions();
               },
-              child: const Text('Вимкнути оптимізацію батареї'),
+              child: Text(l.disableBatteryOptimisation),
             ),
           ],
         ],
@@ -630,16 +628,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ),
   );
 
-  Widget _oemHintCard() => const Card(
+  Widget _oemHintCard() => Card(
     child: Padding(
-      padding: EdgeInsets.all(16),
-      child: Text(
-        'Xiaomi, Huawei, Samsung: у системних налаштуваннях застосунку '
-        'увімкніть «Автозапуск» і встановіть батарею в режим '
-        '«Без обмежень», а в «Останніх» закріпіть застосунок — інакше '
-        'прошивка може вивантажити сервіс.',
-        style: TextStyle(fontSize: 12),
-      ),
+      padding: const EdgeInsets.all(16),
+      child: Text(l.oemHint, style: const TextStyle(fontSize: 12)),
     ),
   );
 
@@ -654,13 +646,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ),
   );
 
-  static String _authLabel(String auth) => switch (auth) {
-    AuthPhase.waitPhone => 'Очікується номер телефону',
-    AuthPhase.waitCode => 'Очікується код',
-    AuthPhase.waitPassword => 'Очікується пароль 2FA',
-    AuthPhase.closed => 'Сесію закрито',
-    AuthPhase.unsupported => 'Непідтримуваний стан входу',
-    _ => 'Підключення…',
+  String _authLabel(String auth) => switch (auth) {
+    AuthPhase.waitPhone => l.authWaitPhone,
+    AuthPhase.waitCode => l.authWaitCode,
+    AuthPhase.waitPassword => l.authWaitPassword,
+    AuthPhase.closed => l.authClosed,
+    AuthPhase.unsupported => l.authUnsupported,
+    _ => l.authConnecting,
   };
 
   static String _hhmm(DateTime time) =>

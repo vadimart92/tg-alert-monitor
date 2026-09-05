@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/ipc/protocol.dart';
 import '../../service/monitor_engine.dart';
+import '../../l10n/app_localizations.dart';
 import '../service_bridge.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -17,6 +18,9 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  /// Device-language strings, for every method on this state.
+  L get l => L.of(context);
+
   final _phone = TextEditingController();
   final _code = TextEditingController();
   final _password = TextEditingController();
@@ -33,19 +37,16 @@ class _LoginScreenState extends State<LoginScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Вийти з акаунта?'),
-        content: const Text(
-          'Моніторинг зупиниться, сесія Telegram буде видалена. '
-          'Для повернення знадобиться новий код входу.',
-        ),
+        title: Text(l.logOutTitle),
+        content: Text(l.logOutBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Скасувати'),
+            child: Text(l.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Вийти'),
+            child: Text(l.logOut),
           ),
         ],
       ),
@@ -57,10 +58,10 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Вхід у Telegram'),
+        title: Text(l.telegramSignIn),
         actions: [
           IconButton(
-            tooltip: 'Вийти',
+            tooltip: l.logOut,
             icon: const Icon(Icons.logout),
             onPressed: _confirmLogout,
           ),
@@ -95,15 +96,15 @@ class _LoginScreenState extends State<LoginScreen> {
     switch (bridge.auth) {
       case AuthPhase.waitPhone:
         return [
-          const Text('Введіть номер телефону в міжнародному форматі.'),
+          Text(l.enterPhoneInternational),
           const SizedBox(height: 12),
           TextField(
             controller: _phone,
             keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Номер телефону',
+            decoration: InputDecoration(
+              labelText: l.phoneNumber,
               hintText: '+380…',
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 12),
@@ -114,24 +115,20 @@ class _LoginScreenState extends State<LoginScreen> {
                 Command(Cmd.authPhone, {'phone': _phone.text.trim()}),
               );
             },
-            child: const Text('Далі'),
+            child: Text(l.next),
           ),
         ];
 
       case AuthPhase.waitCode:
         return [
-          Text(
-            bridge.authDetail.isEmpty
-                ? 'Введіть код підтвердження.'
-                : bridge.authDetail,
-          ),
+          Text(bridge.authDetail.isEmpty ? l.enterCode : bridge.authDetail),
           const SizedBox(height: 12),
           TextField(
             controller: _code,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Код',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: l.code,
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 12),
@@ -140,14 +137,14 @@ class _LoginScreenState extends State<LoginScreen> {
               bridge.clearError();
               bridge.send(Command(Cmd.authCode, {'code': _code.text.trim()}));
             },
-            child: const Text('Підтвердити'),
+            child: Text(l.confirm),
           ),
           TextButton(
             onPressed: () {
               bridge.clearError();
               bridge.send(Command(Cmd.authResend));
             },
-            child: const Text('Надіслати код повторно'),
+            child: Text(l.resendCode),
           ),
         ];
 
@@ -155,16 +152,16 @@ class _LoginScreenState extends State<LoginScreen> {
         return [
           Text(
             bridge.authDetail.isEmpty
-                ? 'Введіть пароль двофакторної автентифікації.'
-                : 'Підказка: ${bridge.authDetail}',
+                ? l.enterTwoFactorPassword
+                : l.passwordHint(bridge.authDetail),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _password,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Пароль 2FA',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: l.twoFactorPassword,
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 12),
@@ -175,7 +172,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Command(Cmd.authPassword, {'password': _password.text}),
               );
             },
-            child: const Text('Увійти'),
+            child: Text(l.signIn),
           ),
         ];
 
@@ -185,11 +182,7 @@ class _LoginScreenState extends State<LoginScreen> {
             color: Theme.of(context).colorScheme.errorContainer,
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: Text(
-                'Цей сценарій входу не підтримується '
-                '(${bridge.authDetail}). Увійдіть в офіційний Telegram '
-                'і спробуйте ще раз.',
-              ),
+              child: Text(l.unsupportedSignIn(bridge.authDetail)),
             ),
           ),
         ];
@@ -198,21 +191,21 @@ class _LoginScreenState extends State<LoginScreen> {
         return [
           ListTile(
             leading: const Icon(Icons.check_circle, color: Colors.green),
-            title: Text(bridge.userName.isEmpty ? 'Готово' : bridge.userName),
-            subtitle: const Text('Вхід виконано'),
+            title: Text(bridge.userName.isEmpty ? l.done : bridge.userName),
+            subtitle: Text(l.signedIn),
           ),
         ];
 
       default:
-        return const [
+        return [
           Center(
             child: Padding(
-              padding: EdgeInsets.all(32),
+              padding: const EdgeInsets.all(32),
               child: Column(
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Підключення до Telegram…'),
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(l.connectingToTelegram),
                 ],
               ),
             ),
@@ -222,18 +215,17 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   /// Turns the raw TDLib error codes into something a person can act on.
-  static String _humanError(String raw) {
-    if (raw.contains('PHONE_CODE_INVALID')) return 'Невірний код.';
-    if (raw.contains('PHONE_CODE_EXPIRED')) {
-      return 'Код застарів, надішліть новий.';
+  String _humanError(String raw) {
+    if (raw.contains('PHONE_CODE_INVALID')) return l.invalidCode;
+    if (raw.contains('PHONE_CODE_EXPIRED')) return l.codeExpired;
+    if (raw.contains('PASSWORD_HASH_INVALID')) {
+      return l.invalidTwoFactorPassword;
     }
-    if (raw.contains('PASSWORD_HASH_INVALID')) return 'Невірний пароль 2FA.';
-    if (raw.contains('PHONE_NUMBER_INVALID')) return 'Невірний номер телефону.';
+    if (raw.contains('PHONE_NUMBER_INVALID')) return l.invalidPhoneNumber;
     final flood = RegExp(r'FLOOD_WAIT_(\d+)').firstMatch(raw);
     if (flood != null) {
       final seconds = int.tryParse(flood.group(1) ?? '') ?? 0;
-      final minutes = (seconds / 60).ceil();
-      return 'Забагато спроб. Зачекайте близько $minutes хв.';
+      return l.tooManyAttempts((seconds / 60).ceil());
     }
     return raw;
   }

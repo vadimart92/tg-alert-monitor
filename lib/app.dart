@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'core/storage/settings_store.dart';
+import 'l10n/app_localizations.dart';
 import 'ui/screens/home_screen.dart';
 import 'ui/service_bridge.dart';
 
@@ -19,7 +20,6 @@ class _AppState extends State<App> {
   @override
   void initState() {
     super.initState();
-    ServiceBridge.initTask();
     SettingsStore.open().then((store) {
       if (mounted) setState(() => _settings = store);
     });
@@ -37,6 +37,8 @@ class _AppState extends State<App> {
     return MaterialApp(
       title: 'TG Alert Monitor',
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: L.localizationsDelegates,
+      supportedLocales: L.supportedLocales,
       theme: ThemeData(
         colorSchemeSeed: const Color(0xFF2AABEE),
         useMaterial3: true,

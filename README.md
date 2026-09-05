@@ -1,158 +1,164 @@
 # TG Alert Monitor
 
-Android-застосунок, який стежить за каналами у вибраній папці Telegram і на
-повідомлення з ключовими словами реагує так, як ви оберете: пересилає їх у ваш
-канал, вмикає сирену на цьому телефоні, або і те, і те.
+An Android app that watches the channels in a Telegram folder of your choosing
+and reacts to messages containing your keywords the way you tell it to: by
+forwarding them into your own channel, by raising a siren on this phone, or by
+doing both.
 
-Реалізація за [SPEC.md](SPEC.md). Мова інтерфейсу — українська.
+Built to [SPEC.md](SPEC.md) (Ukrainian). The app's interface is available in
+Ukrainian and English, and follows the device language.
 
 ---
 
-## Що це робить
+## What it does
 
-1. Логіниться в Telegram **як користувач** (через TDLib) — бо бот не бачить
-   повідомлення чужих каналів.
-2. Ви обираєте папку Telegram зі списку і задаєте ключові слова
+1. Signs in to Telegram **as a user** (through TDLib) — a bot cannot see the
+   messages of channels it does not own.
+2. You pick a Telegram folder from a list and enter keywords
    (`шахед`, `балістика`, `Дрон`…).
-3. Після «Старт» фоновий сервіс читає нові повідомлення в чатах папки —
-   з вимкненим екраном, після змахування застосунку з «Останніх» і після
-   перезавантаження телефону.
-4. Якщо текст або підпис містить ключове слово, спрацьовує вибраний спосіб
-   сповіщення (див. нижче): пересилання оригіналу в цільовий канал від вашого
-   імені (зі збереженням «Переслано з…» і медіа) та/або сповіщення із сиреною
-   на цьому телефоні.
+3. After «Start» a foreground service reads new messages in that folder's
+   chats — with the screen off, after the app is swiped out of Recents, and
+   after the phone reboots.
+4. When a message's text or caption contains a keyword, the delivery mode you
+   picked kicks in (see below): the original is forwarded into your target
+   channel under your own name (keeping the "Forwarded from…" header and any
+   media), and/or a notification with a siren goes off on this phone.
 
 ---
 
-## Що потрібно підготувати
+## What you need first
 
-| Дані | Де взяти |
-|------|----------|
-| `api_id`, `api_hash` | https://my.telegram.org → API development tools → створити застосунок (платформа Android) |
-| Цільовий канал | Створіть приватний канал, де **ви** адміністратор із правом «Публікувати повідомлення». Обирається зі списку в налаштуваннях. Потрібен лише для режимів «Форвард» і «Обидва» |
+| Detail | Where to get it |
+|--------|-----------------|
+| `api_id`, `api_hash` | https://my.telegram.org → API development tools → create an application (platform: Android) |
+| Target channel | Create a private channel where **you** are an administrator with the "Post messages" right. It is picked from a list in the settings, and is only needed for the "Forward" and "Both" modes |
 
-Бот не потрібен: доставка йде через вашу ж сесію Telegram.
+No bot is involved: delivery goes through your own Telegram session.
 
 ---
 
-## Встановлення
+## Installing
 
-APK підписаний debug-ключем цієї машини (`~/.android/debug.keystore`), тож
-оновлення встановлюються поверх попередніх.
+The APK is signed with the debug key of whichever machine built it
+(`~/.android/debug.keystore`), so updates install over the previous build as
+long as you keep building on the same machine.
 
 ```bash
 adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
-Для більшості сучасних телефонів потрібен саме `arm64-v8a`.
+`arm64-v8a` is the one you want for most modern phones.
 
-## Перше налаштування
+## First-time setup
 
-1. Відкрийте застосунок → шестерня «Налаштування».
-2. Введіть `api_id`, `api_hash` → **Зберегти**.
-3. Картка «Потрібен вхід у Telegram» → номер телефону → код → за потреби
-   пароль 2FA.
-4. Поверніться в налаштування → **«Знайти мої канали»** → оберіть цільовий
-   канал зі списку. **«Тестове повідомлення»** надішле тест тим самим шляхом,
-   що й справжня тривога.
-5. На головному екрані оберіть **папку Telegram** зі списку;
-   кнопка «Показати чати» покаже, які саме чати в неї входять
-   (канали позначені іконкою 📢).
-6. Додайте ключові слова (Enter або «+»), потім **«Старт»**.
+1. Open the app → the gear icon, «Settings».
+2. Enter `api_id` and `api_hash` → **Save**.
+3. The «Telegram sign-in required» card → phone number → code → 2FA password
+   if you have one.
+4. Back in the settings → **«Find my channels»** → pick the target channel
+   from the list. **«Test message»** sends a test down exactly the same path a
+   real alert takes.
+5. On the home screen, pick a **Telegram folder** from the list; «Show chats»
+   reveals which chats it contains (channels are marked with 📢).
+6. Add your keywords (Enter or «+»), then hit **«Start»**.
 
-Логін зберігається в базі TDLib: після перезапуску застосунку повторний вхід
-не потрібен.
+The login lives in the TDLib database, so restarting the app does not ask you
+to sign in again.
 
-### Дозволи — обов'язково
+### Permissions — not optional
 
-Без них Android зупинить моніторинг:
+Without these, Android will stop the monitoring:
 
-* **Сповіщення** — постійне сповіщення сервісу є умовою його роботи у фоні.
-* **Оптимізація батареї — вимкнути** (кнопка на головному екрані).
-* Xiaomi / Huawei / Samsung: у системних налаштуваннях застосунку увімкніть
-  **«Автозапуск»**, встановіть батарею в режим **«Без обмежень»**, і закріпіть
-  застосунок у списку «Останні».
+* **Notifications** — the service's persistent notification is the condition
+  for it running in the background at all.
+* **Battery optimisation — disable it** (there is a button on the home
+  screen).
+* Xiaomi / Huawei / Samsung: in the system settings for the app, enable
+  **"Autostart"**, set the battery mode to **"Unrestricted"**, and pin the app
+  in the Recents list.
 
 ---
 
-## Як працює пошук
+## How matching works
 
-* Збіг = **підрядок без урахування регістру**. `шахед` знайде `Шахеди`,
+* A match is a **case-insensitive substring**. `шахед` finds `Шахеди`,
   `ШАХЕДІВ`, `шахедами`.
-* Слово автоматично зводиться до **кореня**, тому відмінки покриваються:
-  `Зенітка` шукається як `зеніт` і знаходить «на Зенітку»,
-  «у Зенітці», «над Зеніткою». Корінь показано сірим на чипі — він
-  ніколи не застосовується непомітно.
-* Обрізається закінчення, а також `к`/`г`/`х` перед ним: у місцевому відмінку
-  вони чергуються (Зеніт**к**а → у Зеніт**ц**і), тож корінь має
-  закінчуватися до них.
-* **Щоб задати корінь самому — введіть слово, що закінчується на приголосну.**
-  Такі слова застосунок не змінює: `перемог` лишиться `перемог`.
-* Стеммер простий і навмисно не знає морфології. Іноді корінь виходить
-  коротшим, ніж хотілося б (`місто` → `міст`, що збігається зі словом «міст»).
-  Саме тому корінь видно в UI.
-* Пробіли й переноси рядків нормалізуються, тож `балістика на` знайде і текст,
-  розбитий на два рядки. Фрази з кількох слів не скорочуються.
-* **Слова-винятки** — окремий розділ на головному екрані. Якщо таке слово є в
-  повідомленні, воно не спрацьовує, навіть коли ключове слово теж є
-  (напр. «відбій», «збито»). У сховищі вони зберігаються з префіксом `-`.
+* A keyword is reduced to its **stem**, so declined forms are covered:
+  `Зенітка` is searched for as `зеніт`, which finds «на Зенітку»,
+  «у Зенітці», «над Зеніткою». The stem is shown in grey on the chip —
+  the guess is never applied invisibly.
+* The ending is trimmed, and so is a `к`/`г`/`х` in front of it: those
+  alternate in the locative case (Зеніт**к**а → у Зеніт**ц**і), so the
+  stem has to end before them.
+* **To set the stem yourself, enter a word ending in a consonant.** Those are
+  left alone: `перемог` stays `перемог`.
+* The stemmer is simple and deliberately knows no morphology. Sometimes the
+  stem comes out shorter than you would like (`місто` → `міст`, which collides
+  with the word "bridge"). That is exactly why the stem is visible in the UI.
+* Whitespace and line breaks are normalised, so `балістика на` also matches
+  text split across two lines. Multi-word phrases are never shortened.
+* **Exclusion words** get their own section on the home screen. A message
+  containing one does not trigger, even when a keyword is present too (say
+  «відбій», «збито»). They are stored with a `-` prefix.
 
-Слово, за яким стався збіг, показано в журналі як **тег** (`#зенітка`).
-Пробіли й дефіси в тегу стають підкресленнями (`тест-ключ` → `#тест_ключ`),
-бо Telegram обриває тег на пробілі чи дефісі.
+The keyword that matched is shown in the journal as a **hashtag**
+(`#зенітка`). Spaces and hyphens inside a tag become underscores
+(`тест-ключ` → `#тест_ключ`), because Telegram cuts a tag off at a space or a
+hyphen.
 
-## Як сповіщати: перемикач на три положення
+## How to be alerted: a three-position switch
 
-Картка «Сповіщення» на головному екрані:
+The «Notifications» card on the home screen:
 
-| Положення | Що робить |
-|-----------|-----------|
-| **Форвард** | Оригінал пересилається в цільовий канал. Телефон мовчить. |
-| **Локально** | Сповіщення в шторці цього телефона + сирена. Нічого не пересилається, цільовий канал не потрібен. |
-| **Обидва** | І пересилання, і сирена. |
+| Position | What it does |
+|----------|--------------|
+| **Forward** | The original is forwarded into the target channel. The phone stays quiet. |
+| **Local** | A notification in this phone's shade plus the siren. Nothing is forwarded, and no target channel is needed. |
+| **Both** | Forwarding and the siren. |
 
-Перемикач діє одразу: перемикати можна й під час активного моніторингу.
+The switch takes effect immediately — you can flip it while monitoring is
+running.
 
-Сирена — `assets/siren_ostap_calm.ogg`. Її програє сам Android як звук каналу
-сповіщень «Збіги за ключовими словами», з атрибутами будильника — тож її чути
-і в беззвучному режимі. Гучність, вібрацію й важливість можна змінити в
-системних налаштуваннях цього каналу.
+The siren is `assets/siren_ostap_calm.ogg`. Android itself plays it, as the
+sound of the "keyword matches" notification channel, with alarm audio
+attributes — so it is audible even with the phone on silent. Volume, vibration
+and importance can be changed in that channel's system settings.
 
-## Як виглядає пересилання
+## What a forward looks like
 
-Оригінал іде як справжній форвард: із заголовком «Переслано з <канал>»,
-з медіа й без дублювання тексту. Більше нічого поруч не публікується —
-теги видно в журналі застосунку.
+The original goes across as a real forward: with the "Forwarded from <channel>"
+header, with its media, and without the text being retyped. Nothing else is
+posted alongside it — the tags are visible in the app's journal.
 
-Якщо канал-джерело забороняє пересилання (`has_protected_content`),
-надсилається текстова копія з посиланням на оригінал — щоб тривога
-не загубилася.
+If the source channel forbids forwarding (`has_protected_content`), a text
+copy with a link to the original is sent instead, so the alert is not lost.
 
-## Журнал
+## Journal
 
-Вкладка «Збіги»: **тап** відкриває повідомлення в Telegram, **довге
-натискання** копіює посилання.
+On the «Matches» tab, a **tap** opens the message in Telegram and a **long
+press** copies its link.
 
-## Що не спрацьовує
+## What does not trigger
 
-Повідомлення відкидається, якщо: чат не в папці; це ваше власне повідомлення;
-немає тексту і підпису (стікер, опитування); воно старіше за «Максимальний вік»
-(захист від лавини після реконекту); або таке ж повідомлення вже оброблялося.
-Редагування вже обробленого повідомлення повторно **не** надсилається.
+A message is dropped when: its chat is not in the folder; it is your own
+message; it has neither text nor a caption (a sticker, a poll); it is older
+than "Maximum message age" (which protects against an avalanche after a
+reconnect); or the same message has already been handled. Editing a message
+that was already handled does **not** send it again.
 
 ---
 
-## Розробка
+## Development
 
-Середовище (кожна сесія PowerShell):
+Requires the Flutter SDK and the Android SDK. Point your shell at them the way
+your platform expects — for example, on Windows with PowerShell:
 
 ```powershell
-$env:Path = "F:\Adndroid\FlutterNew\bin;$env:Path"
-$env:ANDROID_HOME = "F:\Adndroid\SDK"
-$env:GRADLE_USER_HOME = "F:\Adndroid\gradle"
+$env:Path = "<flutter-sdk>\bin;$env:Path"
+$env:ANDROID_HOME = "<android-sdk>"
 ```
 
-Перевірки:
+Checks:
 
 ```bash
 flutter analyze
@@ -160,48 +166,56 @@ dart format --set-exit-if-changed lib test
 flutter test
 ```
 
-Збірка:
+Build:
 
 ```bash
 flutter build apk --release --split-per-abi
 ```
 
-### Структура
+### Layout
 
-| Каталог | Що всередині |
-|---------|--------------|
-| `lib/core/td/` | FFI до `libtdjson.so`, receive-ізолят, кореляція запит/відповідь за `@extra` |
-| `lib/core/bot/` | Bot API, формування HTML, черга надсилання з лімітами і повторами |
-| `lib/core/matcher/` | Пошук ключових слів |
-| `lib/core/ipc/` | Протокол UI ↔ сервіс |
-| `lib/service/` | `MonitorEngine` (уся логіка, без Flutter) і `TaskHandler` foreground-сервісу |
-| `lib/ui/` | Екрани і міст до сервісу |
+| Directory | What is in it |
+|-----------|---------------|
+| `lib/core/td/` | FFI to `libtdjson.so`, the receive isolate, request/response correlation by `@extra` |
+| `lib/core/bot/` | Message rendering and the send queue with its rate limits and retries |
+| `lib/core/matcher/` | Keyword matching |
+| `lib/core/ipc/` | The UI ↔ service protocol |
+| `lib/service/` | `MonitorEngine` (all the logic, no Flutter) and the foreground service's `TaskHandler` |
+| `lib/ui/` | Screens and the bridge to the service |
+| `lib/l10n/` | Ukrainian and English interface strings (`.arb`) |
 
-`lib/core/` і `MonitorEngine` не залежать від Flutter і покриті звичайними
-тестами з рукописними фейками (`test/fakes/`).
+`lib/core/` and `MonitorEngine` do not depend on Flutter and are covered by
+ordinary tests with hand-written fakes (`test/fakes/`).
+
+`app_uk.arb` is the template and `app_en.arb` the translation — Ukrainian is
+the source of truth. `app_localizations*.dart` is generated from them by
+`flutter pub get`, and is not in git. Because the engine may not import
+Flutter, its own strings are declared as a plain-Dart `EngineStrings`
+interface; `test/l10n_test.dart` checks that its Ukrainian default and the
+`.arb` files have not drifted apart.
 
 ### TDLib
 
-Готові бінарники **v1.8.65** з
+Prebuilt **v1.8.65** binaries from
 [up9cloud/android-libtdjson](https://github.com/up9cloud/android-libtdjson/releases),
-лежать у `android/app/src/main/jniLibs/<abi>/libtdjson.so`.
+placed in `android/app/src/main/jniLibs/<abi>/libtdjson.so`.
 
-Самі `.so` (81 МБ) у git не зберігаються. Після клонування виконайте:
+The `.so` files themselves (81 MB) are not kept in git. After cloning, run:
 
 ```bash
 bash scripts/fetch_tdlib.sh
 ```
 
-Скрипт звіряє SHA-256 архіву і відмовляється встановлювати щось інше.
+The script verifies the archive's SHA-256 and refuses to install anything else.
 
 ```
 jniLibs.tar.gz
-  розмір  42 825 897 байт
+  size    42 825 897 bytes
   SHA-256 eb777d3e7baedeb02871c691b2090daa1bc51baf9215a81bc55bf54edb76df2b
 ```
 
-Сегменти `LOAD` у `libtdjson.so` вирівняні на `0x4000`, тобто бібліотека
-сумісна з телефонами, які мають сторінки пам'яті 16 КБ.
+The `LOAD` segments in `libtdjson.so` are aligned to `0x4000`, so the library
+works on phones with 16 KB memory pages.
 
-**Клієнт TDLib створюється лише в ізоляті сервісу.** UI ніколи не відкриває
-`libtdjson.so`: два клієнти на одній базі не допускаються.
+**The TDLib client is only ever created in the service isolate.** The UI never
+opens `libtdjson.so`: two clients over one database are not allowed.

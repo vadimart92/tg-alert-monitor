@@ -57,3 +57,7 @@ key.properties
 # Prebuilt TDLib binaries (81 MB). Restore with scripts/fetch_tdlib.sh;
 # the archive checksum is recorded in README.md.
 android/app/src/main/jniLibs/**/*.so
+
+# Generated from lib/l10n/*.arb by `flutter gen-l10n`, which `flutter pub get`
+# runs for us (pubspec: flutter.generate). The .arb files are the source.
+lib/l10n/app_localizations*.dart

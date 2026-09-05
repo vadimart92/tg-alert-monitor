@@ -75,9 +75,7 @@ void main() {
   });
 
   test('an unknown delivery mode falls back to forwarding', () async {
-    final store = await openWith({
-      SettingsStore.keyAlertDelivery: 'telepathy',
-    });
+    final store = await openWith({SettingsStore.keyAlertDelivery: 'telepathy'});
 
     expect(store.readConfig().delivery, AlertDelivery.forward);
   });

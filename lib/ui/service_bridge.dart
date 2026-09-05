@@ -13,6 +13,7 @@ import '../core/ipc/protocol.dart';
 import '../core/model/app_config.dart';
 import '../core/model/match_entry.dart';
 import '../core/util/app_logger.dart';
+import '../l10n/app_localizations.dart';
 import '../service/monitor_engine.dart';
 import '../service/monitor_task_handler.dart';
 
@@ -60,13 +61,16 @@ class ServiceBridge extends ChangeNotifier {
 
   // --- lifecycle ----------------------------------------------------------
 
-  /// Configures the foreground task. Must run before [startService].
-  static void initTask() {
+  /// Configures the foreground task. Must run before [ensureServiceRunning].
+  ///
+  /// Takes its strings from the caller because the channel name is user
+  /// visible, and this runs before any part of the service exists.
+  static void initTask(L strings) {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'tg_alert_monitor',
-        channelName: 'Моніторинг Telegram',
-        channelDescription: 'Постійне з’єднання з Telegram для сповіщень',
+        channelName: strings.serviceChannelName,
+        channelDescription: strings.serviceChannelDescription,
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,
       ),
@@ -82,14 +86,14 @@ class ServiceBridge extends ChangeNotifier {
   }
 
   /// Starts the service if it is not running, then attaches to it.
-  Future<void> ensureServiceRunning() async {
+  Future<void> ensureServiceRunning(L strings) async {
     serviceRunning = await FlutterForegroundTask.isRunningService;
     if (!serviceRunning) {
       final result = await FlutterForegroundTask.startService(
         serviceId: 4242,
         serviceTypes: const [ForegroundServiceTypes.specialUse],
-        notificationTitle: 'TG Alert Monitor',
-        notificationText: 'Підключення до Telegram…',
+        notificationTitle: strings.appTitle,
+        notificationText: strings.connectingToTelegram,
         callback: startCallback,
       );
       switch (result) {
@@ -100,7 +104,7 @@ class ServiceBridge extends ChangeNotifier {
           lastError = ServiceError(
             ErrorScope.service,
             0,
-            'Не вдалося запустити фоновий сервіс: $error',
+            strings.serviceCouldNotStart('$error'),
             DateTime.now(),
           );
       }
