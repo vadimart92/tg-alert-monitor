@@ -128,6 +128,48 @@ class MessageFormatter {
     return '$header$body$ellipsis$footer';
   }
 
+  /// A `t.me/c/...` link points inside a private channel, which Telegram will
+  /// not render a preview for — nobody outside the channel could see it.
+  static bool buildsPreview(String link) =>
+      link.isNotEmpty && !link.contains('/c/');
+
+  /// The bot's rendering: the tags and the link, and nothing else.
+  ///
+  /// A bot cannot forward from a channel it is not in, so what it posts is a
+  /// message of its own. Left to repeat the whole post as text, that reads
+  /// like a wall — and Telegram's own link preview does the job far better,
+  /// with the original's formatting, media and author.
+  ///
+  /// So the text is deliberately short and the preview carries the content.
+  /// For a private source there will be no preview, and only then is the body
+  /// included, because otherwise the alert would say nothing at all.
+  static String formatForBot({
+    required String chatTitle,
+    required List<String> keywords,
+    required String text,
+    required String link,
+    required DateTime time,
+  }) {
+    if (!buildsPreview(link)) {
+      return format(
+        chatTitle: chatTitle,
+        keywords: keywords,
+        text: text,
+        link: link,
+        time: time,
+      );
+    }
+
+    final header =
+        '🔔 <b>${escapeHtml(chatTitle)}</b>\n'
+        '🔑 ${renderKeywords(keywords)}\n'
+        '${formatTime(time)}\n\n';
+    final body = '$header${escapeHtml(link)}';
+    return body.length <= telegramLimit
+        ? body
+        : body.substring(0, _safeCut(body, telegramLimit));
+  }
+
   static final RegExp _anchorTag = RegExp(r'<a href="([^"]*)">([^<]*)</a>');
   static final RegExp _otherTags = RegExp(r'</?[a-zA-Z]+>');
 

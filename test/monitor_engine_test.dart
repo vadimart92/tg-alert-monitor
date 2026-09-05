@@ -589,7 +589,41 @@ void main() {
         // The rendering carries the tags and a link back to the original.
         expect(bot.sent.single.html, contains('#шахед'));
         expect(bot.sent.single.html, contains('https://t.me/c/111/1000'));
+        // A t.me/c link is private: Telegram builds no preview for it, so the
+        // body has to come along or the alert would say nothing.
+        expect(bot.sent.single.showPreview, isFalse);
+        expect(bot.sent.single.html, contains('Шахед над містом'));
         expect(harness.matchLog.statusUpdates.single.status, MatchStatus.sent);
+        await harness.dispose();
+      },
+    );
+
+    test(
+      'a public source is posted as a link for Telegram to preview',
+      () async {
+        final bot = FakeBotApi();
+        final config = _runnableConfig.copyWith(botToken: '123:AAA');
+        final harness = await Harness.create(config: config, botApi: bot);
+        await harness.authenticate();
+        await harness.engine.startMonitoring(config);
+        await harness.settle();
+        harness.transport.responders['getMessageLink'] = (_) => {
+          '@type': 'messageLink',
+          'link': 'https://t.me/kyiv_alarm/55',
+          'is_public': true,
+        };
+
+        harness.transport.push(
+          harness.textMessage(text: 'Шахед над містом, дуже довгий допис'),
+        );
+        await harness.settle();
+
+        final message = bot.sent.single;
+        expect(message.showPreview, isTrue);
+        expect(message.html, contains('#шахед'));
+        expect(message.html, contains('https://t.me/kyiv_alarm/55'));
+        // The preview shows the post; repeating it as text is what looked bad.
+        expect(message.html, isNot(contains('дуже довгий допис')));
         await harness.dispose();
       },
     );

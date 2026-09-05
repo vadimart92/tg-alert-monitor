@@ -5,6 +5,8 @@
 /// the UI isolate is usually dead.
 library;
 
+import 'dart:ui' show Color;
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../core/bot/message_formatter.dart';
@@ -28,12 +30,24 @@ class AlertNotifier {
   }) : _s = strings,
        _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
-  /// Bumped whenever the channel's sound or importance changes: Android
-  /// freezes both at creation time and ignores later edits, so a new sound
-  /// only reaches existing installs under a new channel id.
-  static const String channelId = 'tg_alert_matches_v1';
+  /// Bumped whenever the channel's sound, importance or audio attributes
+  /// change: Android freezes all of them at creation time and ignores later
+  /// edits, so a fix only reaches an existing install under a new id.
+  ///
+  /// v2: the first version was created on a build where the sound resource
+  /// was missing from the release APK, so those installs hold a channel whose
+  /// sound never got set and can never be corrected in place.
+  static const String channelId = 'tg_alert_matches_v2';
+
+  /// Superseded ids, deleted on startup so they stop cluttering the system
+  /// notification settings with channels that do nothing.
+  static const List<String> retiredChannelIds = ['tg_alert_matches_v1'];
 
   static const String soundResource = 'siren_ostap_calm';
+
+  /// An air-raid alert should look like one. Tints the icon and the app name
+  /// in the shade, and the notification light where there is one.
+  static const Color alertColor = Color(0xFFD32F2F);
 
   /// Body limit — Android truncates far earlier than Telegram does.
   static const int bodyLimit = 800;
@@ -53,7 +67,13 @@ class AlertNotifier {
     description: _s.matchChannelDescription,
     importance: Importance.max,
     sound: const RawResourceAndroidNotificationSound(soundResource),
+    // The alarm usage is what carries the siren past a silenced ringer: it
+    // plays on the alarm stream, which silent and vibrate modes do not mute.
+    // Do Not Disturb still silences it — bypassing that needs a permission
+    // the owner has to grant by hand, so it is not taken here.
     audioAttributesUsage: AudioAttributesUsage.alarm,
+    enableLights: true,
+    ledColor: alertColor,
   );
 
   /// Creates the channel. Safe to call repeatedly; only the first call works.
@@ -64,11 +84,18 @@ class AlertNotifier {
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       ),
     );
-    await _plugin
+    final android = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.createNotificationChannel(_channel);
+        >();
+    await android?.createNotificationChannel(_channel);
+    for (final retired in retiredChannelIds) {
+      try {
+        await android?.deleteNotificationChannel(channelId: retired);
+      } catch (error) {
+        onLog?.call('could not delete channel $retired: $error');
+      }
+    }
     _initialised = true;
   }
 
@@ -79,7 +106,7 @@ class AlertNotifier {
       await init();
       await _plugin.show(
         id: _nextId++,
-        title: entry.chatTitle.isEmpty ? _s.match : entry.chatTitle,
+        title: '🔴 ${entry.chatTitle.isEmpty ? _s.match : entry.chatTitle}',
         body: _body(entry),
         notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
@@ -90,10 +117,16 @@ class AlertNotifier {
             category: AndroidNotificationCategory.alarm,
             audioAttributesUsage: AudioAttributesUsage.alarm,
             sound: const RawResourceAndroidNotificationSound(soundResource),
+            color: alertColor,
+            colorized: true,
+            enableLights: true,
+            ledColor: alertColor,
+            ledOnMs: 500,
+            ledOffMs: 500,
             ticker: entry.keywords.join(' '),
             styleInformation: BigTextStyleInformation(
               _escape(_body(entry)),
-              contentTitle: _escape(entry.chatTitle),
+              contentTitle: '🔴 ${_escape(entry.chatTitle)}',
             ),
           ),
         ),

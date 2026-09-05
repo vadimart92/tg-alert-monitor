@@ -117,9 +117,10 @@ class FakeClock {
 
 /// One `sendMessage` the engine asked the bot to make.
 class BotMessage {
-  const BotMessage(this.chatId, this.html);
+  const BotMessage(this.chatId, this.html, {this.showPreview = false});
   final String chatId;
   final String html;
+  final bool showPreview;
 }
 
 /// In-memory [BotApi]. Records what was posted, and fails on demand.
@@ -145,10 +146,11 @@ class FakeBotApi implements BotApi {
   Future<void> sendMessage({
     required String chatId,
     required String html,
+    bool showPreview = false,
   }) async {
     attempts++;
     final failure = failWith;
     if (failure != null) throw failure;
-    sent.add(BotMessage(chatId, html));
+    sent.add(BotMessage(chatId, html, showPreview: showPreview));
   }
 }

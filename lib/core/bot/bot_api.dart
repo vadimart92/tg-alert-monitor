@@ -77,8 +77,16 @@ abstract class BotApi {
   /// Returns the target chat's title (`getChat`).
   Future<String> getChat(String chatId);
 
-  /// Posts [html] to [chatId] with previews disabled.
-  Future<void> sendMessage({required String chatId, required String html});
+  /// Posts [html] to [chatId].
+  ///
+  /// [showPreview] lets Telegram render the link the message carries, which
+  /// is the whole point of the bot's rendering: the preview shows the source
+  /// post itself, with its media and formatting.
+  Future<void> sendMessage({
+    required String chatId,
+    required String html,
+    bool showPreview = false,
+  });
 }
 
 /// Builds a [BotApi] for a given bot token.
@@ -120,12 +128,17 @@ class HttpBotApi implements BotApi {
   Future<void> sendMessage({
     required String chatId,
     required String html,
+    bool showPreview = false,
   }) async {
     await _call('sendMessage', {
       'chat_id': chatId,
       'text': html,
       'parse_mode': 'HTML',
-      'link_preview_options': {'is_disabled': true},
+      'link_preview_options': showPreview
+          // Above the text, so the post itself is what the eye lands on and
+          // the tags read as a caption under it.
+          ? {'is_disabled': false, 'show_above_text': true}
+          : {'is_disabled': true},
     });
   }
 

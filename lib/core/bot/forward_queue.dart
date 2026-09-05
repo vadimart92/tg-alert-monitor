@@ -13,7 +13,9 @@ class ForwardTask {
     required this.messageId,
     required this.targetChatId,
     required this.html,
-  });
+    String? botHtml,
+    this.link = '',
+  }) : botHtml = botHtml ?? html;
 
   /// Source chat and message — used to address status updates, and to forward
   /// the original through the owner's own session.
@@ -25,6 +27,14 @@ class ForwardTask {
 
   /// Self-contained rendering, used when the original cannot be forwarded.
   final String html;
+
+  /// Shorter rendering for the bot, which leans on Telegram's link preview
+  /// instead of repeating the post.
+  final String botHtml;
+
+  /// Link to the original, so the sender can decide whether a preview is
+  /// worth asking for.
+  final String link;
 }
 
 /// Raised by a delivery attempt to tell the queue how to react.
