@@ -9,9 +9,13 @@ library;
 const String exclusionPrefix = '-';
 
 class _Keyword {
-  const _Keyword(this.original, this.normalized);
+  const _Keyword(this.original, this.pattern);
+
+  /// As the owner typed it — used for display and for the hashtag.
   final String original;
-  final String normalized;
+
+  /// What is actually searched for: the stem, so declined forms match.
+  final String pattern;
 }
 
 class KeywordMatcher {
@@ -23,11 +27,9 @@ class KeywordMatcher {
       final isExclusion =
           trimmed.startsWith(exclusionPrefix) && trimmed.length > 1;
       final body = isExclusion ? trimmed.substring(1) : trimmed;
-      final normalized = normalize(body);
-      if (normalized.isEmpty) continue;
-      (isExclusion ? _excludes : _includes).add(
-        _Keyword(body.trim(), normalized),
-      );
+      final pattern = stemOf(body);
+      if (pattern.isEmpty) continue;
+      (isExclusion ? _excludes : _includes).add(_Keyword(body.trim(), pattern));
     }
   }
 
@@ -46,6 +48,54 @@ class KeywordMatcher {
       .replaceAll(_whitespace, ' ')
       .trim();
 
+  // Ukrainian inflection, handled where it is free: the stem is derived once,
+  // when the keyword list changes, so matching still costs one substring scan
+  // per keyword and nothing extra per message.
+  static const String _vowels = 'аяуюеєиіїо';
+
+  /// Consonants that alternate before the locative ending: Білогород*к*а but
+  /// у Білогород*ц*і. Cutting the stem before them covers both.
+  static const String _alternating = 'кгх';
+
+  /// Shortest stem worth searching for; below this a stem matches far too much.
+  static const int _minStemLength = 3;
+
+  /// The substring actually searched for a given keyword.
+  ///
+  /// `Білогородка` becomes `білогород`, which matches «на Білогородку»,
+  /// «у Білогородці» and «над Білогородкою». A keyword that already ends in a
+  /// consonant is left alone, so typing the stem yourself always wins over the
+  /// automatic guess.
+  ///
+  /// Multi-word keywords are never stemmed: `балістика на` is a phrase, and
+  /// trimming its last word would change what it means.
+  static String stemOf(String keyword) {
+    var stem = normalize(keyword);
+    if (stem.isEmpty || stem.contains(' ')) return stem;
+
+    // Adjectives: балістичний -> балістичн, covering -а/-е/-і as well.
+    if (stem.length >= _minStemLength + 2 &&
+        (stem.endsWith('ий') || stem.endsWith('ій'))) {
+      return stem.substring(0, stem.length - 2);
+    }
+
+    if (!_vowels.contains(stem[stem.length - 1])) return stem;
+    if (stem.length - 1 < _minStemLength) return stem;
+    stem = stem.substring(0, stem.length - 1);
+
+    // Only after an ending was removed does the alternation matter.
+    if (_alternating.contains(stem[stem.length - 1]) &&
+        stem.length - 1 >= _minStemLength) {
+      stem = stem.substring(0, stem.length - 1);
+    }
+    return stem;
+  }
+
+  /// True when [keyword] is searched for as something shorter than typed, so
+  /// the UI can show what is really being matched.
+  static bool isStemmed(String keyword) =>
+      stemOf(keyword) != normalize(keyword);
+
   bool get isEmpty => _includes.isEmpty;
   bool get isNotEmpty => _includes.isNotEmpty;
 
@@ -56,11 +106,11 @@ class KeywordMatcher {
     final haystack = normalize(text);
     if (haystack.isEmpty) return const <String>[];
     for (final ex in _excludes) {
-      if (haystack.contains(ex.normalized)) return const <String>[];
+      if (haystack.contains(ex.pattern)) return const <String>[];
     }
     final hits = <String>[];
     for (final kw in _includes) {
-      if (haystack.contains(kw.normalized)) hits.add(kw.original);
+      if (haystack.contains(kw.pattern)) hits.add(kw.original);
     }
     return hits;
   }
