@@ -133,6 +133,28 @@ posted alongside it — the tags are visible in the app's journal.
 If the source channel forbids forwarding (`has_protected_content`), a text
 copy with a link to the original is sent instead, so the alert is not lost.
 
+## Setting up a second phone
+
+The first phone shows a QR code (the ⧉ menu in the app bar → «Share this
+setup»), the second one scans it (→ «Take setup from another phone»). The
+second phone then subscribes to the channels it is not in yet, gathers them
+into a folder of the same name, copies the keywords, and switches itself to
+**Local** mode — a second phone is there to raise a siren, not to relay into a
+channel it has no rights in.
+
+It asks before doing any of it: joining channels on someone's Telegram account
+is not something to do straight off a camera frame. If that phone is not signed
+in to Telegram yet, the scanned code is held until it is.
+
+**Only public channels travel.** The receiving account has never seen these
+chats, so a numeric id means nothing to its TDLib — a `@username` is what it can
+resolve and join, and a private channel has none. Those are listed by name on
+the sharing screen so you know to add them by hand.
+
+The code carries channel usernames, keywords, the folder name and the maximum
+message age. It carries no credentials: `api_id`, `api_hash` and the Telegram
+session stay on their own phone.
+
 ## Journal
 
 On the «Matches» tab, a **tap** opens the message in Telegram and a **long
@@ -182,6 +204,7 @@ flutter build apk --release --split-per-abi
 | `lib/core/ipc/` | The UI ↔ service protocol |
 | `lib/service/` | `MonitorEngine` (all the logic, no Flutter) and the foreground service's `TaskHandler` |
 | `lib/ui/` | Screens and the bridge to the service |
+| `lib/core/model/setup_payload.dart` | What the setup QR code carries |
 | `lib/l10n/` | Ukrainian and English interface strings (`.arb`) |
 
 `lib/core/` and `MonitorEngine` do not depend on Flutter and are covered by

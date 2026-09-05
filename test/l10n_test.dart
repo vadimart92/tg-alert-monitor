@@ -64,6 +64,7 @@ void main() {
 
     expect(engine.testMessageBody('12:00'), l.testMessageBody('12:00'));
     expect(engine.testMessageSent, l.testMessageSent);
+    expect(engine.setupNothingResolved, l.setupNothingResolved);
   });
 
   test('both locales are reachable and actually differ', () async {

@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/ipc/protocol.dart';
 import '../../core/model/app_config.dart';
@@ -79,6 +80,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _saved = true);
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(l.settingsSaved)));
+  }
+
+  /// Opens the page where api_id and api_hash are created.
+  ///
+  /// It is a plain browser hand-off: the sign-in there is Telegram's, done by
+  /// the owner, and the two values are copied back by hand.
+  Future<void> _openMyTelegram() async {
+    var opened = false;
+    try {
+      opened = await launchUrl(
+        Uri.parse('https://my.telegram.org/apps'),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {
+      opened = false;
+    }
+    if (opened || !mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l.couldNotOpenLink)));
   }
 
   void _checkBot() {
@@ -211,6 +231,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             Text(l.apiCredentialsHelp, style: const TextStyle(fontSize: 12)),
+            const SizedBox(height: 4),
+            Text(
+              l.apiCredentialsSteps,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).hintColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _openMyTelegram,
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: Text(l.openMyTelegram),
+              ),
+            ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _apiId,

@@ -14,6 +14,8 @@ import '../service_bridge.dart';
 import 'log_screen.dart';
 import 'login_screen.dart';
 import 'settings_screen.dart';
+import 'setup_scan_screen.dart';
+import 'setup_share_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.bridge, required this.settings});
@@ -130,12 +132,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _stop() => widget.bridge.send(Command(Cmd.monitorStop));
 
+  void _shareSetup() => Navigator.push(
+    context,
+    MaterialPageRoute<void>(
+      builder: (_) => SetupShareScreen(bridge: widget.bridge),
+    ),
+  );
+
+  /// Reloads the config afterwards: a scan rewrites folder, keywords and
+  /// delivery mode behind this screen's back.
+  Future<void> _scanSetup() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => SetupScanScreen(bridge: widget.bridge),
+      ),
+    );
+    await widget.settings.reload();
+    if (mounted) setState(() => _config = widget.settings.readConfig());
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('TG Alert Monitor'),
         actions: [
+          PopupMenuButton<void Function()>(
+            tooltip: l.setupShare,
+            icon: const Icon(Icons.qr_code_2),
+            onSelected: (action) => action(),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: _shareSetup,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.qr_code_2),
+                  title: Text(l.setupShare),
+                ),
+              ),
+              PopupMenuItem(
+                value: _scanSetup,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.qr_code_scanner),
+                  title: Text(l.setupScan),
+                ),
+              ),
+            ],
+          ),
           IconButton(
             tooltip: l.journal,
             icon: const Icon(Icons.receipt_long),

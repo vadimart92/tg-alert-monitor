@@ -31,6 +31,17 @@ void main() {
         Command(Cmd.botTest, {'targetChatId': '-100123'}),
         Command(Cmd.botTargets),
         Command(Cmd.logGet),
+        Command(Cmd.setupExport),
+        Command(Cmd.setupApply, {
+          'payload': {
+            'f': 'Тривога',
+            'c': [
+              {'u': 'kyiv_alarm', 't': 'Київ'},
+            ],
+            'k': ['шахед'],
+            'a': 10,
+          },
+        }),
       ];
 
       // Guards against a command being added to Cmd.all but not covered here.
@@ -132,6 +143,24 @@ void main() {
           'message': 'hello',
         }),
         Event(Ev.logLines, {'lines': const <Map<String, dynamic>>[]}),
+        Event(Ev.setupPayload, {
+          'payload': {
+            'f': 'Тривога',
+            'c': [
+              {'u': 'kyiv_alarm', 't': 'Київ'},
+            ],
+            'k': ['шахед'],
+            'a': 10,
+          },
+          'skipped': ['Приватний'],
+        }),
+        Event(Ev.setupProgress, {'done': 0, 'total': 2, 'title': 'Київ'}),
+        Event(Ev.setupDone, {
+          'channels': 2,
+          'joined': 1,
+          'failed': ['@gone'],
+          'folderId': 42,
+        }),
       ];
 
       expect(samples.map((e) => e.ev).toSet(), Ev.all);

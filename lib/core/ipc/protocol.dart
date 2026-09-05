@@ -40,6 +40,12 @@ abstract final class Cmd {
   static const String botTargets = 'bot.targets';
   static const String logGet = 'log.get';
 
+  /// Builds a shareable [SetupPayload] out of the current configuration.
+  static const String setupExport = 'setup.export';
+
+  /// Applies a scanned [SetupPayload]: joins channels, builds the folder.
+  static const String setupApply = 'setup.apply';
+
   static const Set<String> all = {
     uiAttached,
     uiDetached,
@@ -57,6 +63,8 @@ abstract final class Cmd {
     botTest,
     botTargets,
     logGet,
+    setupExport,
+    setupApply,
   };
 }
 
@@ -73,6 +81,15 @@ abstract final class Ev {
   static const String log = 'log';
   static const String logLines = 'logLines';
 
+  /// Answer to [Cmd.setupExport].
+  static const String setupPayload = 'setupPayload';
+
+  /// One channel handled, while [Cmd.setupApply] runs.
+  static const String setupProgress = 'setupProgress';
+
+  /// [Cmd.setupApply] finished, successfully or not.
+  static const String setupDone = 'setupDone';
+
   static const Set<String> all = {
     state,
     folders,
@@ -84,6 +101,9 @@ abstract final class Ev {
     error,
     log,
     logLines,
+    setupPayload,
+    setupProgress,
+    setupDone,
   };
 }
 
@@ -94,6 +114,7 @@ abstract final class ErrorScope {
   static const String td = 'td';
   static const String folder = 'folder';
   static const String service = 'service';
+  static const String setup = 'setup';
 }
 
 /// A UI -> service message.

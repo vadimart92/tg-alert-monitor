@@ -12,10 +12,36 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import '../core/ipc/protocol.dart';
 import '../core/model/app_config.dart';
 import '../core/model/match_entry.dart';
+import '../core/model/setup_payload.dart';
 import '../core/util/app_logger.dart';
 import '../l10n/app_localizations.dart';
 import '../service/monitor_engine.dart';
 import '../service/monitor_task_handler.dart';
+
+/// How far [Cmd.setupApply] has got.
+class SetupProgress {
+  const SetupProgress(this.done, this.total, this.title);
+  final int done;
+  final int total;
+  final String title;
+}
+
+/// What [Cmd.setupApply] ended up doing.
+class SetupResult {
+  const SetupResult({
+    required this.channels,
+    required this.joined,
+    required this.failed,
+    this.error,
+  });
+
+  final int channels;
+  final int joined;
+  final List<String> failed;
+
+  /// Set when nothing was applied at all.
+  final String? error;
+}
 
 class ServiceError {
   const ServiceError(this.scope, this.code, this.message, this.at);
@@ -56,6 +82,15 @@ class ServiceBridge extends ChangeNotifier {
   List<ChatRef>? botTargets;
   bool discoveringTargets = false;
   bool serviceRunning = false;
+
+  // --- setup transfer ------------------------------------------------------
+  /// Built by the service on request; null until it answers.
+  SetupPayload? setupPayload;
+
+  /// Channels that could not go into the QR code, by title.
+  List<String> setupSkipped = const <String>[];
+  SetupProgress? setupProgress;
+  SetupResult? setupResult;
 
   bool get isReady => auth == AuthPhase.ready;
 
@@ -230,6 +265,37 @@ class ServiceBridge extends ChangeNotifier {
           logLines = logLines.sublist(logLines.length - 300);
         }
 
+      case Ev.setupPayload:
+        final raw = event.data['payload'];
+        setupPayload = raw is Map
+            ? SetupPayload.fromJson(Map<String, dynamic>.from(raw))
+            : const SetupPayload();
+        final skipped = event.data['skipped'];
+        setupSkipped = [
+          if (skipped is List)
+            for (final title in skipped) title.toString(),
+        ];
+
+      case Ev.setupProgress:
+        setupProgress = SetupProgress(
+          event.field<num>('done')?.toInt() ?? 0,
+          event.field<num>('total')?.toInt() ?? 0,
+          event.field<String>('title') ?? '',
+        );
+
+      case Ev.setupDone:
+        setupProgress = null;
+        final failed = event.data['failed'];
+        setupResult = SetupResult(
+          channels: event.field<num>('channels')?.toInt() ?? 0,
+          joined: event.field<num>('joined')?.toInt() ?? 0,
+          failed: [
+            if (failed is List)
+              for (final title in failed) title.toString(),
+          ],
+          error: event.field<String>('error'),
+        );
+
       case Ev.logLines:
         final lines = event.data['lines'];
         if (lines is List) {
@@ -257,6 +323,30 @@ class ServiceBridge extends ChangeNotifier {
     lastError = null;
     notifyListeners();
     send(Command(Cmd.botTargets));
+  }
+
+  /// Asks the service to build a shareable payload out of the live config.
+  void requestSetupPayload() {
+    setupPayload = null;
+    setupSkipped = const <String>[];
+    lastError = null;
+    notifyListeners();
+    send(Command(Cmd.setupExport));
+  }
+
+  /// Hands a scanned payload to the service to act on.
+  void applySetup(SetupPayload payload) {
+    setupResult = null;
+    setupProgress = null;
+    lastError = null;
+    notifyListeners();
+    send(Command(Cmd.setupApply, {'payload': payload.toJson()}));
+  }
+
+  void clearSetupResult() {
+    setupResult = null;
+    setupProgress = null;
+    notifyListeners();
   }
 
   /// Pushes edited settings to a running engine so they take effect at once.

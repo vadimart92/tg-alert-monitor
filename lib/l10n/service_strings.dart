@@ -79,4 +79,7 @@ class LocalisedEngineStrings implements EngineStrings {
   String testMessageBody(String stamp) => _l.testMessageBody(stamp);
   @override
   String get testMessageSent => _l.testMessageSent;
+
+  @override
+  String get setupNothingResolved => _l.setupNothingResolved;
 }
