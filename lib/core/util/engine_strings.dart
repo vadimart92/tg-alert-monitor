@@ -35,6 +35,8 @@ abstract interface class EngineStrings {
 
   String testMessageBody(String stamp);
   String get testMessageSent;
+
+  String get setupNothingResolved;
 }
 
 /// Ukrainian, hard-coded. The engine's default, and what the tests assert on.
@@ -96,4 +98,9 @@ class UkrainianEngineStrings implements EngineStrings {
   String testMessageBody(String stamp) => '✅ TG Alert Monitor: тест, $stamp';
   @override
   String get testMessageSent => 'Тест надіслано';
+
+  @override
+  String get setupNothingResolved =>
+      'Жоден канал з коду не вдалося відкрити. '
+      'Перевірте мережу і спробуйте ще раз.';
 }

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tg_alert_monitor/core/ipc/protocol.dart';
 import 'package:tg_alert_monitor/core/model/app_config.dart';
 import 'package:tg_alert_monitor/core/model/match_entry.dart';
+import 'package:tg_alert_monitor/core/model/setup_payload.dart';
 import 'package:tg_alert_monitor/core/td/td_client.dart';
 import 'package:tg_alert_monitor/core/util/app_logger.dart';
 import 'package:tg_alert_monitor/service/monitor_engine.dart';
@@ -131,7 +132,13 @@ class Harness {
       '@type': 'chat',
       'id': request['chat_id'],
       'title': 'Канал ${request['chat_id']}',
-      'type': {'@type': 'chatTypeSupergroup', 'is_channel': true},
+      'type': {
+        '@type': 'chatTypeSupergroup',
+        'is_channel': true,
+        // TDLib derives the chat id from the supergroup id; the fake only has
+        // to be self-consistent, so -100111 belongs to supergroup 111.
+        'supergroup_id': (request['chat_id'] as num).toInt().abs() % 1000,
+      },
     };
     // By default the bot is a posting admin of every channel.
     transport.responders['getChatMember'] = (_) => {
@@ -157,9 +164,43 @@ class Harness {
       'link': 'https://t.me/c/111/${request['message_id']}',
       'is_public': false,
     };
+    // Setup transfer: every chat is a public supergroup, and joining works.
+    transport.responders['getSupergroup'] = (request) => {
+      '@type': 'supergroup',
+      'id': request['supergroup_id'],
+      'usernames': {
+        '@type': 'usernames',
+        'active_usernames': ['channel_${request['supergroup_id']}'],
+        'editable_username': 'channel_${request['supergroup_id']}',
+      },
+    };
+    transport.responders['searchPublicChat'] = (request) => {
+      '@type': 'chat',
+      'id': -100777,
+      'title': 'Знайдено ${request['username']}',
+      'type': {'@type': 'chatTypeSupergroup', 'is_channel': true},
+      // No positions: the account is not a member yet.
+      'positions': <Object>[],
+    };
+    transport.responders['joinChat'] = (_) => {'@type': 'ok'};
+    transport.responders['createChatFolder'] = (_) => {
+      '@type': 'chatFolderInfo',
+      'id': 42,
+    };
+    transport.responders['getChatFolder'] = (_) => {
+      '@type': 'chatFolder',
+      'included_chat_ids': <int>[-100555],
+    };
+    transport.responders['editChatFolder'] = (_) => {
+      '@type': 'chatFolderInfo',
+      'id': 7,
+    };
   }
 
   Future<void> settle() => pumpEventQueue();
+
+  /// Channels the setup run asked TDLib to join.
+  List<Map<String, dynamic>> get joins => transport.sentOfType('joinChat');
 
   /// Originals forwarded through the owner's session.
   List<Map<String, dynamic>> get forwards =>
@@ -504,6 +545,268 @@ void main() {
       final chats = await harness.engine.resolveFolder(7);
       expect(chats, hasLength(1));
       expect(chats.single.id, -100111);
+      await harness.dispose();
+    });
+  });
+
+  // --- (f) setup transfer --------------------------------------------------
+  group('setup transfer', () {
+    const config = MonitorConfig(
+      folderId: 7,
+      folderName: 'Тривога',
+      keywords: ['шахед', '-відбій'],
+      targetChatId: '-100999',
+      maxAgeMinutes: 20,
+      chats: [
+        ChatRef(id: -100111, title: 'Публічний', isChannel: true),
+        ChatRef(id: -100222, title: 'Приватний', isChannel: true),
+      ],
+    );
+
+    SetupPayload payloadOf(Harness harness) {
+      final event = harness.eventsOf(Ev.setupPayload).single;
+      return SetupPayload.fromJson(
+        Map<String, dynamic>.from(event.data['payload'] as Map),
+      );
+    }
+
+    test('export turns the folder into usernames and keywords', () async {
+      final harness = await Harness.create(config: config);
+      await harness.authenticate();
+
+      await harness.engine.handleCommand(Command(Cmd.setupExport));
+      await harness.settle();
+
+      final payload = payloadOf(harness);
+      expect(payload.folderName, 'Тривога');
+      expect(payload.keywords, ['шахед', '-відбій']);
+      expect(payload.maxAgeMinutes, 20);
+      // The chat id is useless on another account; the username is not.
+      expect(payload.channels.map((c) => c.username), hasLength(2));
+      expect(payload.channels.first.title, 'Публічний');
+      await harness.dispose();
+    });
+
+    test('a private channel is reported, not silently dropped', () async {
+      final harness = await Harness.create(config: config);
+      await harness.authenticate();
+      // A supergroup with no username at all: a private channel.
+      harness.transport.responders['getSupergroup'] = (request) =>
+          (request['supergroup_id'] as num).toInt() == 222
+          ? {'@type': 'supergroup', 'usernames': null}
+          : {
+              '@type': 'supergroup',
+              'usernames': {
+                '@type': 'usernames',
+                'editable_username': 'public_one',
+              },
+            };
+      harness.transport.responders['getChat'] = (request) => {
+        '@type': 'chat',
+        'id': request['chat_id'],
+        'title': 'Канал ${request['chat_id']}',
+        'type': {
+          '@type': 'chatTypeSupergroup',
+          'is_channel': true,
+          'supergroup_id': (request['chat_id'] as num).toInt() == -100222
+              ? 222
+              : 111,
+        },
+      };
+
+      await harness.engine.handleCommand(Command(Cmd.setupExport));
+      await harness.settle();
+
+      final event = harness.eventsOf(Ev.setupPayload).single;
+      expect(payloadOf(harness).channels, hasLength(1));
+      expect(event.data['skipped'], ['Приватний']);
+      await harness.dispose();
+    });
+
+    test('export before login is refused', () async {
+      final harness = await Harness.create(config: config);
+
+      await harness.engine.handleCommand(Command(Cmd.setupExport));
+      await harness.settle();
+
+      expect(harness.eventsOf(Ev.setupPayload), isEmpty);
+      expect(harness.eventsOf(Ev.error).last.data['scope'], ErrorScope.setup);
+      await harness.dispose();
+    });
+
+    test('apply joins, builds a folder and switches to local', () async {
+      final harness = await Harness.create();
+      await harness.authenticate();
+
+      await harness.engine.applySetup(
+        const SetupPayload(
+          folderName: 'Нова',
+          channels: [SetupChannel(username: 'kyiv_alarm', title: 'Київ')],
+          keywords: ['шахед'],
+          maxAgeMinutes: 15,
+        ),
+      );
+      await harness.settle();
+
+      expect(harness.joins, hasLength(1));
+      expect(harness.joins.single['chat_id'], -100777);
+
+      final created = harness.transport.sentOfType('createChatFolder').single;
+      final folder = created['folder'] as Map;
+      expect(folder['included_chat_ids'], [-100777]);
+
+      final applied = harness.engine.config;
+      expect(applied.folderId, 42);
+      expect(applied.folderName, 'Нова');
+      expect(applied.keywords, ['шахед']);
+      expect(applied.maxAgeMinutes, 15);
+      // The second phone has no channel of its own to post into.
+      expect(applied.delivery, AlertDelivery.local);
+      expect(applied.isRunnable, isTrue);
+
+      final done = harness.eventsOf(Ev.setupDone).single;
+      expect(done.data['channels'], 1);
+      expect(done.data['joined'], 1);
+      expect(done.data['failed'], isEmpty);
+      await harness.dispose();
+    });
+
+    test('a channel already subscribed to is not joined again', () async {
+      final harness = await Harness.create();
+      await harness.authenticate();
+      harness.transport.responders['searchPublicChat'] = (_) => {
+        '@type': 'chat',
+        'id': -100777,
+        'title': 'Вже підписаний',
+        'type': {'@type': 'chatTypeSupergroup', 'is_channel': true},
+        // A position in a chat list is what membership looks like.
+        'positions': [
+          {'@type': 'chatPosition', 'order': '1'},
+        ],
+      };
+
+      await harness.engine.applySetup(
+        const SetupPayload(
+          folderName: 'Нова',
+          channels: [SetupChannel(username: 'kyiv_alarm')],
+          keywords: ['шахед'],
+        ),
+      );
+      await harness.settle();
+
+      expect(harness.joins, isEmpty);
+      expect(harness.eventsOf(Ev.setupDone).single.data['joined'], 0);
+      expect(harness.eventsOf(Ev.setupDone).single.data['channels'], 1);
+      await harness.dispose();
+    });
+
+    test('one bad channel does not sink the rest', () async {
+      final harness = await Harness.create();
+      await harness.authenticate();
+      harness.transport.responders['searchPublicChat'] = (request) =>
+          request['username'] == 'gone'
+          ? {'@type': 'error', 'code': 400, 'message': 'USERNAME_NOT_OCCUPIED'}
+          : {
+              '@type': 'chat',
+              'id': -100777,
+              'title': 'Живий',
+              'type': {'@type': 'chatTypeSupergroup', 'is_channel': true},
+              'positions': <Object>[],
+            };
+
+      await harness.engine.applySetup(
+        const SetupPayload(
+          folderName: 'Нова',
+          channels: [
+            SetupChannel(username: 'gone'),
+            SetupChannel(username: 'alive'),
+          ],
+          keywords: ['шахед'],
+        ),
+      );
+      await harness.settle();
+
+      final done = harness.eventsOf(Ev.setupDone).single;
+      expect(done.data['channels'], 1);
+      expect(done.data['failed'], ['@gone']);
+      expect(harness.engine.config.folderId, 42);
+      await harness.dispose();
+    });
+
+    test('an existing folder is extended, never replaced', () async {
+      final harness = await Harness.create();
+      await harness.authenticate();
+      // The account already has a folder by that name, holding another chat.
+      harness.transport.push({
+        '@type': 'updateChatFolders',
+        'chat_folders': [
+          {
+            'id': 7,
+            'name': {
+              'text': {'text': 'Тривога'},
+            },
+          },
+        ],
+      });
+      await harness.settle();
+
+      await harness.engine.applySetup(
+        const SetupPayload(
+          folderName: 'Тривога',
+          channels: [SetupChannel(username: 'kyiv_alarm')],
+          keywords: ['шахед'],
+        ),
+      );
+      await harness.settle();
+
+      expect(harness.transport.sentOfType('createChatFolder'), isEmpty);
+      final edited = harness.transport.sentOfType('editChatFolder').single;
+      final folder = edited['folder'] as Map;
+      // The chat that was already in the folder survives.
+      expect(folder['included_chat_ids'], [-100555, -100777]);
+      expect(harness.engine.config.folderId, 7);
+      await harness.dispose();
+    });
+
+    test('progress is reported per channel', () async {
+      final harness = await Harness.create();
+      await harness.authenticate();
+
+      await harness.engine.applySetup(
+        const SetupPayload(
+          folderName: 'Нова',
+          channels: [
+            SetupChannel(username: 'one', title: 'Перший'),
+            SetupChannel(username: 'two', title: 'Другий'),
+          ],
+          keywords: ['шахед'],
+        ),
+      );
+      await harness.settle();
+
+      final progress = harness.eventsOf(Ev.setupProgress);
+      expect(progress, hasLength(2));
+      expect(progress.first.data['done'], 0);
+      expect(progress.first.data['total'], 2);
+      expect(progress.first.data['title'], 'Перший');
+      await harness.dispose();
+    });
+
+    test('apply before login changes nothing', () async {
+      final harness = await Harness.create();
+
+      await harness.engine.applySetup(
+        const SetupPayload(
+          folderName: 'Нова',
+          channels: [SetupChannel(username: 'kyiv_alarm')],
+          keywords: ['шахед'],
+        ),
+      );
+      await harness.settle();
+
+      expect(harness.joins, isEmpty);
+      expect(harness.engine.config.folderId, isNull);
+      expect(harness.eventsOf(Ev.setupDone).single.data['error'], isNotNull);
       await harness.dispose();
     });
   });

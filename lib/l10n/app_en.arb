@@ -181,5 +181,49 @@
   "signInFirst": "Sign in to Telegram first.",
   "couldNotListChannels": "Could not fetch the channel list: {error}",
   "testMessageBody": "✅ TG Alert Monitor: test, {stamp}",
-  "testMessageSent": "Test sent"
+  "testMessageSent": "Test sent",
+
+  "setupNothingResolved": "None of the channels in the code could be opened. Check the network and try again.",
+
+  "setupShare": "Share this setup",
+  "setupScan": "Take setup from another phone",
+  "setupShareTitle": "Setup code",
+  "setupShareIntro": "Scan this on the second phone: it will subscribe to these channels, create the «{folder}» folder and switch to local notifications.",
+  "setupShareSummary": "{channels} channels · {keywords} keywords",
+  "@setupShareSummary": {
+    "placeholders": {
+      "channels": {"type": "int"},
+      "keywords": {"type": "int"}
+    }
+  },
+  "setupNothingToShare": "Nothing to share yet: pick a folder and add some keywords first.",
+  "setupSkipped": "Left out of the code (private channels, with no public link): {titles}. They have to be added by hand on the second phone.",
+  "setupTooBig": "This setup is too large for one QR code. Drop a few channels or keywords.",
+  "setupScanTitle": "Scan the code",
+  "setupScanHint": "Point the camera at the code on the first phone.",
+  "setupCameraDenied": "No access to the camera. Grant it in the system settings for this app.",
+  "setupBadCode": "That is not a TG Alert Monitor code.",
+  "setupPreviewTitle": "Apply this setup?",
+  "setupPreviewBody": "The app will subscribe to the channels this account is not in yet, gather them into the «{folder}» folder, and switch to «Local» mode.",
+  "setupApply": "Apply",
+  "setupSignInFirst": "Sign in to Telegram first — the code is kept, and applied once you are in.",
+  "setupApplying": "{title} ({done} of {total})",
+  "@setupApplying": {
+    "placeholders": {
+      "title": {"type": "String"},
+      "done": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "setupDoneTitle": "Done",
+  "setupDoneBody": "{channels} channels, {joined} of them newly joined.",
+  "@setupDoneBody": {
+    "placeholders": {
+      "channels": {"type": "int"},
+      "joined": {"type": "int"}
+    }
+  },
+  "setupFailed": "Could not do: {titles}",
+  "openMyTelegram": "Open my.telegram.org",
+  "apiCredentialsSteps": "On that page, sign in with your phone number (the code arrives in Telegram) → \"API development tools\" → fill in any application name → you get api_id and api_hash. Copy them here."
 }

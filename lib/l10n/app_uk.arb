@@ -284,5 +284,69 @@
       "stamp": {"type": "String"}
     }
   },
-  "testMessageSent": "Тест надіслано"
+  "testMessageSent": "Тест надіслано",
+
+  "setupNothingResolved": "Жоден канал з коду не вдалося відкрити. Перевірте мережу і спробуйте ще раз.",
+
+  "setupShare": "Поділитися налаштуванням",
+  "setupScan": "Отримати з іншого телефона",
+  "setupShareTitle": "Код налаштування",
+  "setupShareIntro": "Відскануйте цей код на другому телефоні: він підпишеться на ці канали, створить папку «{folder}» і ввімкне локальні сповіщення.",
+  "@setupShareIntro": {
+    "placeholders": {
+      "folder": {"type": "String"}
+    }
+  },
+  "setupShareSummary": "{channels} каналів · {keywords} слів",
+  "@setupShareSummary": {
+    "placeholders": {
+      "channels": {"type": "int"},
+      "keywords": {"type": "int"}
+    }
+  },
+  "setupNothingToShare": "Нема чим ділитися: спочатку виберіть папку і додайте ключові слова.",
+  "setupSkipped": "Не потраплять у код (приватні канали, без публічного посилання): {titles}. Їх доведеться додати на другому телефоні вручну.",
+  "@setupSkipped": {
+    "placeholders": {
+      "titles": {"type": "String"}
+    }
+  },
+  "setupTooBig": "Налаштування завелике для одного QR-коду. Приберіть кілька каналів або слів.",
+  "setupScanTitle": "Сканування коду",
+  "setupScanHint": "Наведіть камеру на код із першого телефона.",
+  "setupCameraDenied": "Немає доступу до камери. Дозвольте його в системних налаштуваннях застосунку.",
+  "setupBadCode": "Це не код TG Alert Monitor.",
+  "setupPreviewTitle": "Застосувати налаштування?",
+  "setupPreviewBody": "Застосунок підпишеться на канали, яких ще немає в акаунті, збере їх у папку «{folder}» і ввімкне режим «Локально».",
+  "@setupPreviewBody": {
+    "placeholders": {
+      "folder": {"type": "String"}
+    }
+  },
+  "setupApply": "Застосувати",
+  "setupSignInFirst": "Спочатку увійдіть у Telegram — код збережено, застосуємо після входу.",
+  "setupApplying": "{title} ({done} з {total})",
+  "@setupApplying": {
+    "placeholders": {
+      "title": {"type": "String"},
+      "done": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "setupDoneTitle": "Готово",
+  "setupDoneBody": "Каналів: {channels}, з них щойно підписано: {joined}.",
+  "@setupDoneBody": {
+    "placeholders": {
+      "channels": {"type": "int"},
+      "joined": {"type": "int"}
+    }
+  },
+  "setupFailed": "Не вдалося: {titles}",
+  "@setupFailed": {
+    "placeholders": {
+      "titles": {"type": "String"}
+    }
+  },
+  "openMyTelegram": "Відкрити my.telegram.org",
+  "apiCredentialsSteps": "На сторінці увійдіть за номером телефону (код прийде в Telegram) → «API development tools» → заповніть будь-яку назву застосунку → отримаєте api_id і api_hash. Скопіюйте їх сюди."
 }

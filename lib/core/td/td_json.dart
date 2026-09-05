@@ -79,3 +79,36 @@ String chatTitle(Object? chat) {
   final title = chat['title'];
   return title is String ? title : '';
 }
+
+/// Active public username of a `supergroup`, or an empty string.
+///
+/// TDLib keeps usernames on the supergroup, not on the chat, and a supergroup
+/// may hold several: the editable one is the canonical link, the rest are
+/// aliases. A private channel has none — which is exactly why it cannot be
+/// handed to another account through a QR code.
+String supergroupUsername(Object? supergroup) {
+  if (supergroup is! Map) return '';
+  final usernames = supergroup['usernames'];
+  if (usernames is! Map) {
+    // Layouts before 1.8.x carried a single `username` string.
+    final legacy = supergroup['username'];
+    return legacy is String ? legacy : '';
+  }
+  final editable = usernames['editable_username'];
+  if (editable is String && editable.isNotEmpty) return editable;
+  final active = usernames['active_usernames'];
+  if (active is List) {
+    for (final name in active) {
+      if (name is String && name.isNotEmpty) return name;
+    }
+  }
+  return '';
+}
+
+/// `supergroup_id` of a chat, or `null` for chats that are not supergroups.
+int? supergroupIdOf(Object? chat) {
+  if (chat is! Map) return null;
+  final type = chat['type'];
+  if (type is! Map || type['@type'] != 'chatTypeSupergroup') return null;
+  return (type['supergroup_id'] as num?)?.toInt();
+}

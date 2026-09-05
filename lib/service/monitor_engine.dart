@@ -13,6 +13,7 @@ import '../core/ipc/protocol.dart';
 import '../core/matcher/keyword_matcher.dart';
 import '../core/model/app_config.dart';
 import '../core/model/match_entry.dart';
+import '../core/model/setup_payload.dart';
 import '../core/storage/match_log.dart';
 import '../core/td/td_client.dart';
 import '../core/td/td_json.dart';
@@ -983,6 +984,14 @@ class MonitorEngine {
 
       case Cmd.logGet:
         _emit(Event(Ev.logLines, {'lines': _logger.toJson()}));
+
+      case Cmd.setupExport:
+        await _exportSetup();
+
+      case Cmd.setupApply:
+        final raw = command.args['payload'];
+        if (raw is! Map) return;
+        await applySetup(SetupPayload.fromJson(Map<String, dynamic>.from(raw)));
     }
   }
 
@@ -1173,6 +1182,278 @@ class MonitorEngine {
         }),
       );
     }
+  }
+
+  // --- setup transfer -----------------------------------------------------
+
+  /// Builds the QR payload out of the configuration in force.
+  ///
+  /// Only public channels can travel: the receiving account has never seen
+  /// these chats, so a numeric id means nothing to its TDLib, and a private
+  /// channel has no username to resolve. Those are reported by title so the
+  /// owner learns they have to be shared some other way, rather than quietly
+  /// going missing on the other phone.
+  Future<void> _exportSetup() async {
+    if (_auth != AuthPhase.ready) {
+      _emitSetupError(_s.signInFirst);
+      return;
+    }
+
+    final chats = _config.chats.isNotEmpty
+        ? _config.chats
+        : (_config.folderId == null
+              ? const <ChatRef>[]
+              : await resolveFolder(_config.folderId!));
+
+    final channels = <SetupChannel>[];
+    final skipped = <String>[];
+
+    for (final chat in chats) {
+      final username = await _usernameOf(chat.id);
+      if (username.isEmpty) {
+        skipped.add(chat.title.isEmpty ? '${chat.id}' : chat.title);
+        continue;
+      }
+      channels.add(SetupChannel(username: username, title: chat.title));
+    }
+
+    final payload = SetupPayload(
+      folderName: _config.folderName,
+      channels: channels,
+      keywords: _config.keywords,
+      maxAgeMinutes: _config.maxAgeMinutes,
+    );
+
+    _logger.info(
+      'setup exported: ${channels.length} channels, ${skipped.length} private',
+    );
+    _emit(
+      Event(Ev.setupPayload, {'payload': payload.toJson(), 'skipped': skipped}),
+    );
+  }
+
+  /// Public username of a chat, or an empty string for a private one.
+  Future<String> _usernameOf(int chatId) async {
+    try {
+      final chat = await _client.send({'@type': 'getChat', 'chat_id': chatId});
+      final supergroupId = supergroupIdOf(chat);
+      if (supergroupId == null) return '';
+      final supergroup = await _client.send({
+        '@type': 'getSupergroup',
+        'supergroup_id': supergroupId,
+      }, timeout: const Duration(seconds: 10));
+      return supergroupUsername(supergroup);
+    } catch (error) {
+      _logger.warn('could not read the username of $chatId: $error');
+      return '';
+    }
+  }
+
+  /// Applies a scanned payload to this account.
+  ///
+  /// Joins whatever the owner is not subscribed to yet, puts everything in a
+  /// folder of the same name (creating it, or extending one that already
+  /// exists), and switches delivery to local notifications — the second phone
+  /// is meant to raise a siren, not to relay into a channel it has no rights
+  /// in.
+  ///
+  /// A channel that cannot be resolved or joined does not abort the run: the
+  /// other twenty are worth having, and the failures are reported at the end.
+  Future<void> applySetup(SetupPayload payload) async {
+    if (_auth != AuthPhase.ready) {
+      _emitSetupError(_s.signInFirst);
+      return;
+    }
+
+    final resolved = <ChatRef>[];
+    final failed = <String>[];
+    var joined = 0;
+
+    for (var index = 0; index < payload.channels.length; index++) {
+      final channel = payload.channels[index];
+      _emit(
+        Event(Ev.setupProgress, {
+          'done': index,
+          'total': payload.channels.length,
+          'title': channel.title.isEmpty ? channel.username : channel.title,
+        }),
+      );
+
+      try {
+        final chat = await _client.send({
+          '@type': 'searchPublicChat',
+          'username': channel.username,
+        }, timeout: const Duration(seconds: 20));
+
+        final chatId = (chat['id'] as num?)?.toInt();
+        if (chatId == null || chatId == 0) {
+          failed.add('@${channel.username}');
+          continue;
+        }
+
+        if (await _joinIfNeeded(chatId, chat)) joined++;
+        resolved.add(
+          ChatRef(
+            id: chatId,
+            title: chatTitle(chat),
+            isChannel: isChannel(chat),
+          ),
+        );
+      } catch (error) {
+        _logger.warn('setup: @${channel.username} failed: $error');
+        failed.add('@${channel.username}');
+      }
+    }
+
+    if (resolved.isEmpty && payload.channels.isNotEmpty) {
+      _emitSetupError(_s.setupNothingResolved);
+      return;
+    }
+
+    final folderId = await _ensureFolder(payload.folderName, resolved);
+
+    await updateConfig(
+      _config.copyWith(
+        folderId: folderId,
+        folderName: payload.folderName,
+        keywords: payload.keywords,
+        maxAgeMinutes: payload.maxAgeMinutes,
+        chats: resolved,
+        // The second phone alerts its owner; it has no channel to post into.
+        delivery: AlertDelivery.local,
+      ),
+    );
+
+    _logger.info(
+      'setup applied: ${resolved.length} channels ($joined joined), '
+      'folder $folderId, ${failed.length} failed',
+    );
+    _emit(
+      Event(Ev.setupDone, {
+        'channels': resolved.length,
+        'joined': joined,
+        'failed': failed,
+        'folderId': folderId ?? -1,
+      }),
+    );
+  }
+
+  /// Joins [chatId] unless the account is already in it. Returns whether it
+  /// actually joined.
+  ///
+  /// A chat the account is already in carries a position in some chat list;
+  /// one found purely by username search does not. TDLib also answers a
+  /// redundant `joinChat` without complaint, so the check is an optimisation
+  /// and a truthful count, not a correctness requirement.
+  Future<bool> _joinIfNeeded(int chatId, Map<String, dynamic> chat) async {
+    final positions = chat['positions'];
+    if (positions is List && positions.isNotEmpty) return false;
+
+    try {
+      await _client.send({
+        '@type': 'joinChat',
+        'chat_id': chatId,
+      }, timeout: const Duration(seconds: 20));
+      return true;
+    } on TdError catch (error) {
+      if (error.message.contains('USER_ALREADY_PARTICIPANT')) return false;
+      rethrow;
+    }
+  }
+
+  /// Finds the folder by name, or builds it. Returns its id, or `null`.
+  ///
+  /// An existing folder is extended rather than replaced: the owner may keep
+  /// other chats in it, and losing those to a setup transfer would be rude.
+  Future<int?> _ensureFolder(String name, List<ChatRef> chats) async {
+    final wanted = [for (final chat in chats) chat.id];
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || wanted.isEmpty) return null;
+
+    try {
+      final existing = _folders.where(
+        (folder) => folder.name.toLowerCase() == trimmed.toLowerCase(),
+      );
+
+      if (existing.isEmpty) {
+        final info = await _client.send({
+          '@type': 'createChatFolder',
+          'folder': _folderRequest(trimmed, wanted),
+        }, timeout: const Duration(seconds: 20));
+        return (info['id'] as num?)?.toInt();
+      }
+
+      final folderId = existing.first.id;
+      final current = await _client.send({
+        '@type': 'getChatFolder',
+        'chat_folder_id': folderId,
+      }, timeout: const Duration(seconds: 20));
+
+      final included = <int>[
+        for (final id in (current['included_chat_ids'] as List? ?? const []))
+          (id as num).toInt(),
+      ];
+      final merged = <int>[
+        ...included,
+        for (final id in wanted)
+          if (!included.contains(id)) id,
+      ];
+      if (merged.length == included.length) return folderId;
+
+      await _client.send({
+        '@type': 'editChatFolder',
+        'chat_folder_id': folderId,
+        'folder': {...current, 'included_chat_ids': merged},
+      }, timeout: const Duration(seconds: 20));
+      return folderId;
+    } catch (error) {
+      _logger.error('setup: could not build the folder: $error');
+      return null;
+    }
+  }
+
+  /// A `chatFolder` holding exactly [chats] and nothing else.
+  static Map<String, dynamic> _folderRequest(String name, List<int> chats) => {
+    '@type': 'chatFolder',
+    'name': {
+      '@type': 'chatFolderName',
+      'text': {'@type': 'formattedText', 'text': name, 'entities': []},
+      'animate_custom_emoji': false,
+    },
+    'icon': {'@type': 'chatFolderIcon', 'name': 'Channels'},
+    'color_id': -1,
+    'is_shareable': false,
+    'pinned_chat_ids': <int>[],
+    'included_chat_ids': chats,
+    'excluded_chat_ids': <int>[],
+    'exclude_muted': false,
+    'exclude_read': false,
+    'exclude_archived': false,
+    'include_contacts': false,
+    'include_non_contacts': false,
+    'include_bots': false,
+    'include_groups': false,
+    'include_channels': false,
+  };
+
+  void _emitSetupError(String message) {
+    _logger.warn('setup: $message');
+    _emit(
+      Event(Ev.error, {
+        'scope': ErrorScope.setup,
+        'code': 0,
+        'message': message,
+      }),
+    );
+    _emit(
+      Event(Ev.setupDone, {
+        'channels': 0,
+        'joined': 0,
+        'failed': <String>[],
+        'folderId': -1,
+        'error': message,
+      }),
+    );
   }
 
   static String _two(int value) => value.toString().padLeft(2, '0');
