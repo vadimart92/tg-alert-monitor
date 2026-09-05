@@ -79,6 +79,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _config = config);
     await widget.settings.reload();
     await widget.settings.writeConfig(config);
+    // The service keeps its own copy of the config; without this a keyword
+    // added mid-alert would not take effect until monitoring was restarted,
+    // and the next folder refresh would write the stale list back.
+    widget.bridge.pushConfig(config);
   }
 
   void _addKeyword() {

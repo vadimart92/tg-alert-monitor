@@ -21,8 +21,15 @@ void main() {
           },
         }),
         Command(Cmd.monitorStop),
+        Command(Cmd.monitorConfig, {
+          'config': {
+            'folderId': 7,
+            'keywords': ['шахед'],
+          },
+        }),
         Command(Cmd.botCheck, {'botToken': '1:aa', 'targetChatId': '@c'}),
         Command(Cmd.botTest, {'botToken': '1:aa', 'targetChatId': '-100123'}),
+        Command(Cmd.botTargets, {'botToken': '1:aa'}),
         Command(Cmd.logGet),
       ];
 
@@ -113,6 +120,12 @@ void main() {
           'status': 'sent',
         }),
         Event(Ev.botInfo, {'botName': 'Bot', 'chatTitle': 'Канал'}),
+        Event(Ev.botTargets, {
+          'botName': 'Bot',
+          'items': [
+            {'id': -100123, 'title': 'Тривога', 'isChannel': true},
+          ],
+        }),
         Event(Ev.error, {'scope': 'bot', 'code': 403, 'message': 'forbidden'}),
         Event(Ev.log, {
           'time': '2026-09-05T07:00:00.000',

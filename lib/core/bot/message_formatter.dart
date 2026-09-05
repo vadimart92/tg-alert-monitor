@@ -19,6 +19,45 @@ class MessageFormatter {
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;');
 
+  // Telegram recognises a hashtag as `#` followed by letters, digits or
+  // underscores; a space or a hyphen ends the tag, so those become underscores.
+  static final RegExp _tagSeparators = RegExp(
+    r'[\s\-\u2010-\u2015]+',
+    unicode: true,
+  );
+  static final RegExp _nonTagCharacters = RegExp(
+    r'[^\p{L}\p{N}_]+',
+    unicode: true,
+  );
+  static final RegExp _repeatedUnderscores = RegExp(r'_{2,}');
+  static final RegExp _edgeUnderscores = RegExp(r'^_+|_+$');
+  static final RegExp _noLetters = RegExp(r'^[\p{N}_]+$', unicode: true);
+
+  /// Renders [keyword] as a Telegram hashtag, or `null` when nothing taggable
+  /// is left.
+  ///
+  /// `тест-ключ` becomes `#тест_ключ` and `балістика на` becomes
+  /// `#балістика_на`, because Telegram would otherwise cut the tag at the
+  /// hyphen or the space. A keyword made only of digits or punctuation cannot
+  /// be a tag at all, and the caller falls back to plain text.
+  static String? hashtag(String keyword) {
+    final tag = keyword
+        .trim()
+        .replaceAll(_tagSeparators, '_')
+        .replaceAll(_nonTagCharacters, '')
+        .replaceAll(_repeatedUnderscores, '_')
+        .replaceAll(_edgeUnderscores, '');
+    if (tag.isEmpty || _noLetters.hasMatch(tag)) return null;
+    return '#$tag';
+  }
+
+  /// The keyword line: hashtags where possible, escaped plain text otherwise.
+  ///
+  /// Tags make the target channel searchable per keyword.
+  static String renderKeywords(List<String> keywords) =>
+      [for (final keyword in keywords) hashtag(keyword) ?? escapeHtml(keyword)]
+          .join(' ');
+
   static String _twoDigits(int value) => value.toString().padLeft(2, '0');
 
   /// `HH:mm` in local time.
@@ -48,7 +87,7 @@ class MessageFormatter {
   }) {
     final header =
         '🔔 <b>${escapeHtml(chatTitle)}</b>\n'
-        '🔑 ${escapeHtml(keywords.join(', '))}\n\n';
+        '🔑 ${renderKeywords(keywords)}\n\n';
     final footer = link.isEmpty
         ? '\n\n${formatTime(time)}'
         : '\n\n<a href="${escapeHtml(link)}">Відкрити оригінал</a>'

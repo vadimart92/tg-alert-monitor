@@ -56,10 +56,23 @@ class BotApiException implements Exception {
   String toString() => 'BotApiException($httpStatus/$errorCode: $description)';
 }
 
+/// Identity of the bot behind a token.
+class BotIdentity {
+  const BotIdentity({required this.id, required this.name, this.username});
+
+  /// Telegram user id of the bot — needed to look it up as a chat member.
+  final int id;
+  final String name;
+  final String? username;
+
+  String get displayName =>
+      (username == null || username!.isEmpty) ? name : '$name (@$username)';
+}
+
 /// The operations the app needs. Tests provide a fake.
 abstract class BotApi {
-  /// Returns the bot's display name (`getMe`).
-  Future<String> getMe();
+  /// Identity of the bot behind the token (`getMe`).
+  Future<BotIdentity> getMe();
 
   /// Returns the target chat's title (`getChat`).
   Future<String> getChat(String chatId);
@@ -85,11 +98,13 @@ class HttpBotApi implements BotApi {
   final Duration timeout;
 
   @override
-  Future<String> getMe() async {
+  Future<BotIdentity> getMe() async {
     final result = await _call('getMe', const {});
-    final first = result['first_name'] as String? ?? '';
-    final username = result['username'] as String?;
-    return username == null || username.isEmpty ? first : '$first (@$username)';
+    return BotIdentity(
+      id: (result['id'] as num?)?.toInt() ?? 0,
+      name: result['first_name'] as String? ?? '',
+      username: result['username'] as String?,
+    );
   }
 
   @override

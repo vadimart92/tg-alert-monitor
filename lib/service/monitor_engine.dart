@@ -615,6 +615,41 @@ class MonitorEngine {
 
   // --- monitoring lifecycle -----------------------------------------------
 
+  /// Applies edited settings to a running engine.
+  ///
+  /// Keyword edits must take effect immediately: the owner adding `шахед`
+  /// while an alert is in progress cannot be asked to stop and start again.
+  /// This also keeps the engine's own copy of the config authoritative, so a
+  /// later folder refresh does not write stale keywords back to storage.
+  Future<void> updateConfig(MonitorConfig config) async {
+    final previousFolderId = _config.folderId;
+
+    // The freshly resolved chat list lives in the engine, not in the UI, so
+    // keep it unless the owner actually switched folders.
+    final keepChats =
+        config.folderId == previousFolderId && config.chats.isEmpty;
+    _config = keepChats ? config.copyWith(chats: _config.chats) : config;
+
+    _matcher = KeywordMatcher(_config.keywords);
+    _logger.addSecret(_config.botToken);
+    await _saveConfig(_config);
+    _logger.info(
+      'config updated: ${_config.keywords.length} keywords, '
+      'folder ${_config.folderId}',
+    );
+
+    if (_config.folderId != previousFolderId) {
+      _recent.clear();
+      _folderChatIds.clear();
+      if (_monitoring && _auth == AuthPhase.ready) {
+        await _guard('folder', () => _refreshFolder());
+      }
+    } else if (_config.chats.isNotEmpty) {
+      _adoptChats(_config.chats);
+    }
+    _emitState();
+  }
+
   Future<void> startMonitoring(MonitorConfig config) async {
     _config = config;
     _matcher = KeywordMatcher(config.keywords);
@@ -737,6 +772,18 @@ class MonitorEngine {
       case Cmd.monitorStop:
         await stopMonitoring();
 
+      case Cmd.monitorConfig:
+        final raw = command.args['config'];
+        if (raw is! Map) return;
+        await updateConfig(
+          MonitorConfig.fromJson(Map<String, dynamic>.from(raw)),
+        );
+
+      case Cmd.botTargets:
+        await _discoverTargets(
+          command.arg<String>('botToken') ?? _config.botToken,
+        );
+
       case Cmd.botCheck:
         await _checkBot(
           command.arg<String>('botToken') ?? _config.botToken,
@@ -781,9 +828,11 @@ class MonitorEngine {
     _logger.addSecret(token);
     try {
       final api = _botApiFactory(token);
-      final botName = await api.getMe();
+      final bot = await api.getMe();
       final chatTitle = await api.getChat(targetChatId);
-      _emit(Event(Ev.botInfo, {'botName': botName, 'chatTitle': chatTitle}));
+      _emit(
+        Event(Ev.botInfo, {'botName': bot.displayName, 'chatTitle': chatTitle}),
+      );
       _logger.info('bot check ok');
     } on BotApiException catch (error) {
       _logger.warn('bot check failed: ${error.description}');
@@ -795,6 +844,129 @@ class MonitorEngine {
         }),
       );
     }
+  }
+
+  /// Finds channels that can serve as the forwarding target.
+  ///
+  /// The Bot API deliberately offers no "list my chats" call, so discovery
+  /// runs through the owner's own TDLib session instead: walk the channels the
+  /// account knows about and ask whether this bot is a member. That works
+  /// regardless of when the bot was added, unlike scraping `getUpdates`, which
+  /// only reaches back 24 hours.
+  ///
+  /// Requires the owner to be an administrator of the channel — otherwise
+  /// Telegram will not answer `getChatMember`, and the channel is skipped.
+  Future<void> _discoverTargets(String token) async {
+    if (_auth != AuthPhase.ready) {
+      _emit(
+        Event(Ev.error, {
+          'scope': ErrorScope.bot,
+          'code': 0,
+          'message': 'Спочатку увійдіть у Telegram.',
+        }),
+      );
+      return;
+    }
+
+    _logger.addSecret(token);
+    final BotIdentity bot;
+    try {
+      bot = await _botApiFactory(token).getMe();
+    } on BotApiException catch (error) {
+      _emit(
+        Event(Ev.error, {
+          'scope': ErrorScope.bot,
+          'code': error.httpStatus ?? 0,
+          'message': error.userMessage,
+        }),
+      );
+      return;
+    }
+
+    if (bot.id <= 0) {
+      _emit(
+        Event(Ev.error, {
+          'scope': ErrorScope.bot,
+          'code': 0,
+          'message': 'Не вдалося визначити id бота.',
+        }),
+      );
+      return;
+    }
+
+    final targets = <ChatRef>[];
+    try {
+      await _loadAllChats({'@type': 'chatListMain'});
+      final response = await _client.send({
+        '@type': 'getChats',
+        'chat_list': {'@type': 'chatListMain'},
+        'limit': 1000,
+      });
+      final ids = response['chat_ids'];
+      if (ids is! List) return;
+
+      for (final rawId in ids) {
+        final chatId = (rawId as num?)?.toInt();
+        if (chatId == null) continue;
+
+        final Map<String, dynamic> chat;
+        try {
+          chat = await _client.send({'@type': 'getChat', 'chat_id': chatId});
+        } on TdError {
+          continue;
+        }
+        if (!isChannel(chat)) continue;
+
+        try {
+          final member = await _client.send({
+            '@type': 'getChatMember',
+            'chat_id': chatId,
+            'member_id': {'@type': 'messageSenderUser', 'user_id': bot.id},
+          }, timeout: const Duration(seconds: 10));
+          if (!_botCanPost(member)) continue;
+          targets.add(
+            ChatRef(id: chatId, title: chatTitle(chat), isChannel: true),
+          );
+        } on TdError {
+          // Not an admin of this channel, or the bot is not in it.
+          continue;
+        } on TdTimeout {
+          continue;
+        }
+      }
+    } catch (error) {
+      _logger.warn('target discovery failed: $error');
+      _emit(
+        Event(Ev.error, {
+          'scope': ErrorScope.bot,
+          'code': 0,
+          'message': 'Не вдалося отримати список каналів: $error',
+        }),
+      );
+      return;
+    }
+
+    _logger.info('target discovery found ${targets.length} channels');
+    _emit(
+      Event(Ev.botTargets, {
+        'botName': bot.displayName,
+        'items': [for (final target in targets) target.toJson()],
+      }),
+    );
+  }
+
+  /// True when the bot is in the chat and allowed to publish there.
+  static bool _botCanPost(Map<String, dynamic> member) {
+    final status = member['status'];
+    if (status is! Map) return false;
+    return switch (status['@type']) {
+      'chatMemberStatusCreator' => true,
+      'chatMemberStatusAdministrator' =>
+        (status['rights'] is Map &&
+            (status['rights'] as Map)['can_post_messages'] == true),
+      // A plain member of a channel cannot post; anything else is left/banned.
+      _ => false,
+    };
   }
 
   Future<void> _testBot(String token, String targetChatId) async {
