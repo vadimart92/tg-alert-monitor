@@ -49,6 +49,11 @@ class ServiceBridge extends ChangeNotifier {
   ServiceError? lastError;
   String? botName;
   String? botChatTitle;
+
+  /// Channels the bot can post to, for the target picker. Null until a
+  /// discovery run has finished at least once.
+  List<ChatRef>? botTargets;
+  bool discoveringTargets = false;
   bool serviceRunning = false;
 
   bool get isReady => auth == AuthPhase.ready;
@@ -194,7 +199,20 @@ class ServiceBridge extends ChangeNotifier {
         botChatTitle = event.field<String>('chatTitle');
         lastError = null;
 
+      case Ev.botTargets:
+        discoveringTargets = false;
+        final name = event.field<String>('botName');
+        if (name != null && name.isNotEmpty) botName = name;
+        final items = event.data['items'];
+        botTargets = [
+          if (items is List)
+            for (final item in items)
+              if (item is Map)
+                ChatRef.fromJson(Map<String, dynamic>.from(item)),
+        ];
+
       case Ev.error:
+        discoveringTargets = false;
         lastError = ServiceError(
           event.field<String>('scope') ?? ErrorScope.service,
           event.field<num>('code')?.toInt() ?? 0,
@@ -228,6 +246,18 @@ class ServiceBridge extends ChangeNotifier {
     lastError = null;
     notifyListeners();
   }
+
+  /// Asks the service which channels the bot was added to.
+  void discoverTargets(String botToken) {
+    discoveringTargets = true;
+    lastError = null;
+    notifyListeners();
+    send(Command(Cmd.botTargets, {'botToken': botToken}));
+  }
+
+  /// Pushes edited settings to a running engine so they take effect at once.
+  void pushConfig(MonitorConfig config) =>
+      send(Command(Cmd.monitorConfig, {'config': config.toJson()}));
 
   void setMatches(List<MatchEntry> entries) {
     matches = entries;

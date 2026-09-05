@@ -29,8 +29,15 @@ abstract final class Cmd {
   static const String foldersChats = 'folders.chats';
   static const String monitorStart = 'monitor.start';
   static const String monitorStop = 'monitor.stop';
+
+  /// Applies configuration changes (keywords, bot token, target chat, maxAge)
+  /// to a running engine without restarting monitoring.
+  static const String monitorConfig = 'monitor.config';
   static const String botCheck = 'bot.check';
   static const String botTest = 'bot.test';
+
+  /// Lists channels the bot was added to, for the target-chat picker.
+  static const String botTargets = 'bot.targets';
   static const String logGet = 'log.get';
 
   static const Set<String> all = {
@@ -45,8 +52,10 @@ abstract final class Cmd {
     foldersChats,
     monitorStart,
     monitorStop,
+    monitorConfig,
     botCheck,
     botTest,
+    botTargets,
     logGet,
   };
 }
@@ -59,6 +68,7 @@ abstract final class Ev {
   static const String match = 'match';
   static const String matchStatus = 'matchStatus';
   static const String botInfo = 'botInfo';
+  static const String botTargets = 'botTargets';
   static const String error = 'error';
   static const String log = 'log';
   static const String logLines = 'logLines';
@@ -70,6 +80,7 @@ abstract final class Ev {
     match,
     matchStatus,
     botInfo,
+    botTargets,
     error,
     log,
     logLines,

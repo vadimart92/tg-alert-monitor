@@ -32,6 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _obscureToken = true;
   bool _saved = false;
+  bool _manualTarget = false;
 
   @override
   void initState() {
@@ -68,6 +69,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       maxAgeMinutes: int.parse(_maxAge.text.trim()),
     );
     await settings.writeConfig(config);
+    // Apply to a running engine immediately, and keep its copy authoritative.
+    widget.bridge.pushConfig(config);
     if (!mounted) return;
     setState(() => _saved = true);
     ScaffoldMessenger.of(context)
@@ -91,6 +94,112 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'botToken': _botToken.text.trim(),
         'targetChatId': _targetChatId.text.trim(),
       }),
+    );
+  }
+
+  /// Target channel picker.
+  ///
+  /// Telegram gives bots no way to list their own chats, so the candidates are
+  /// discovered through the owner's logged-in session (channels where this bot
+  /// can post). Manual entry stays available: discovery needs the owner to be
+  /// an administrator of the channel, which is not guaranteed.
+  Widget _targetChatField() {
+    final bridge = widget.bridge;
+    final targets = bridge.botTargets;
+    final current = _targetChatId.text.trim();
+    final knownIds = [for (final t in targets ?? const <ChatRef>[]) '${t.id}'];
+    final useDropdown = !_manualTarget && targets != null && targets.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (useDropdown)
+          DropdownButtonFormField<String>(
+            initialValue: knownIds.contains(current) ? current : null,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Цільовий канал',
+              helperText: 'Канали, у які додано бота з правом публікації',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              for (final target in targets)
+                DropdownMenuItem(
+                  value: '${target.id}',
+                  child: Text(
+                    target.title.isEmpty ? '${target.id}' : target.title,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _targetChatId.text = value);
+            },
+            validator: (value) =>
+                (value == null || value.isEmpty) ? 'Оберіть канал' : null,
+          )
+        else
+          TextFormField(
+            controller: _targetChatId,
+            decoration: const InputDecoration(
+              labelText: 'Цільовий чат',
+              helperText: '@username або числовий id (-100…)',
+              border: OutlineInputBorder(),
+            ),
+            validator: (value) {
+              final trimmed = (value ?? '').trim();
+              if (trimmed.startsWith('@') && trimmed.length > 1) return null;
+              if (int.tryParse(trimmed) != null) return null;
+              return '@username або ціле число';
+            },
+          ),
+        Row(
+          children: [
+            TextButton.icon(
+              onPressed: bridge.discoveringTargets
+                  ? null
+                  : () {
+                      final token = _botToken.text.trim();
+                      if (token.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Спочатку введіть токен бота'),
+                          ),
+                        );
+                        return;
+                      }
+                      setState(() => _manualTarget = false);
+                      bridge.discoverTargets(token);
+                    },
+              icon: bridge.discoveringTargets
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh, size: 18),
+              label: const Text('Знайти канали бота'),
+            ),
+            const Spacer(),
+            if (targets != null && targets.isNotEmpty)
+              TextButton(
+                onPressed: () => setState(() => _manualTarget = !_manualTarget),
+                child: Text(_manualTarget ? 'Зі списку' : 'Вручну'),
+              ),
+          ],
+        ),
+        if (targets != null && targets.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Каналів не знайдено. Додайте бота адміністратором у канал '
+              'із правом «Публікувати повідомлення» — і ви маєте бути '
+              'адміністратором цього каналу. Або введіть id вручну.',
+              style: TextStyle(fontSize: 12),
+            ),
+          ),
+      ],
     );
   }
 
@@ -158,19 +267,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   : 'Формат 123456:AA…',
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _targetChatId,
-              decoration: const InputDecoration(
-                labelText: 'Цільовий чат',
-                helperText: '@username або числовий id (-100…)',
-                border: OutlineInputBorder(),
-              ),
-              validator: (value) {
-                final trimmed = (value ?? '').trim();
-                if (trimmed.startsWith('@') && trimmed.length > 1) return null;
-                if (int.tryParse(trimmed) != null) return null;
-                return '@username або ціле число';
-              },
+            ListenableBuilder(
+              listenable: widget.bridge,
+              builder: (context, _) => _targetChatField(),
             ),
             const SizedBox(height: 12),
             TextFormField(

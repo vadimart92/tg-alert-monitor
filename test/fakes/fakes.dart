@@ -80,8 +80,13 @@ class FakeTdTransport implements TdTransport {
 
 /// Records Bot API traffic and can be told to fail.
 class FakeBotApi implements BotApi {
-  FakeBotApi({this.botName = 'Test Bot', this.chatTitle = 'Target'});
+  FakeBotApi({
+    this.botId = 424242,
+    this.botName = 'Test Bot',
+    this.chatTitle = 'Target',
+  });
 
+  final int botId;
   final String botName;
   final String chatTitle;
 
@@ -97,11 +102,11 @@ class FakeBotApi implements BotApi {
   int getChatCalls = 0;
 
   @override
-  Future<String> getMe() async {
+  Future<BotIdentity> getMe() async {
     getMeCalls++;
     final error = getMeError;
     if (error != null) throw error;
-    return botName;
+    return BotIdentity(id: botId, name: botName);
   }
 
   @override

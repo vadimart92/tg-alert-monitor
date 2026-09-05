@@ -17,6 +17,54 @@ void main() {
     });
   });
 
+  group('hashtag', () {
+    test('turns a plain keyword into a tag', () {
+      expect(MessageFormatter.hashtag('шахед'), '#шахед');
+      expect(MessageFormatter.hashtag('  Бровар  '), '#Бровар');
+    });
+
+    test('joins words with underscores, since a space would end the tag', () {
+      expect(MessageFormatter.hashtag('балістика на'), '#балістика_на');
+      expect(MessageFormatter.hashtag('тест-ключ'), '#тест_ключ');
+      expect(MessageFormatter.hashtag('a\u2014b'), '#a_b');
+    });
+
+    test('drops characters Telegram would not accept in a tag', () {
+      expect(MessageFormatter.hashtag('шахед!'), '#шахед');
+      expect(MessageFormatter.hashtag('<b>шахед</b>'), '#bшахедb');
+      expect(MessageFormatter.hashtag('шахед, балістика'), '#шахед_балістика');
+    });
+
+    test('collapses and trims underscores', () {
+      expect(MessageFormatter.hashtag('шахед  --  дрон'), '#шахед_дрон');
+      expect(MessageFormatter.hashtag('_шахед_'), '#шахед');
+    });
+
+    test('returns null when nothing taggable is left', () {
+      expect(MessageFormatter.hashtag('123'), isNull);
+      expect(MessageFormatter.hashtag('!!!'), isNull);
+      expect(MessageFormatter.hashtag('   '), isNull);
+      expect(MessageFormatter.hashtag('_'), isNull);
+    });
+
+    test('keeps digits when a letter is present', () {
+      expect(MessageFormatter.hashtag('шахед136'), '#шахед136');
+    });
+  });
+
+  group('renderKeywords', () {
+    test('renders every keyword as a space-separated tag', () {
+      expect(
+        MessageFormatter.renderKeywords(['шахед', 'тест-ключ']),
+        '#шахед #тест_ключ',
+      );
+    });
+
+    test('falls back to escaped text for untaggable keywords', () {
+      expect(MessageFormatter.renderKeywords(['<&>']), '&lt;&amp;&gt;');
+    });
+  });
+
   group('format', () {
     test('includes the chat title, keywords, link and time', () {
       final result = MessageFormatter.format(
@@ -28,7 +76,7 @@ void main() {
       );
 
       expect(result, contains('<b>Тривога Київ</b>'));
-      expect(result, contains('шахед, балістика'));
+      expect(result, contains('#шахед #балістика'));
       expect(result, contains('Шахед над містом'));
       expect(
         result,
@@ -42,14 +90,15 @@ void main() {
     test('escapes user-controlled fields', () {
       final result = MessageFormatter.format(
         chatTitle: 'A & <b>B</b>',
-        keywords: ['<script>'],
+        keywords: ['<>'],
         text: 'сирена <b>гучна</b> & довга',
         link: 'https://t.me/c/1/2',
         time: time,
       );
 
       expect(result, contains('<b>A &amp; &lt;b&gt;B&lt;/b&gt;</b>'));
-      expect(result, contains('&lt;script&gt;'));
+      // "<>" has nothing taggable left, so it falls back to escaped text.
+      expect(result, contains('&lt;&gt;'));
       expect(result, contains('сирена &lt;b&gt;гучна&lt;/b&gt; &amp; довга'));
       // Only our own markup survives as real tags.
       expect('<b>'.allMatches(result).length, 1);
