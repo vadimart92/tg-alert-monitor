@@ -42,6 +42,32 @@ class ChatRef {
   String toString() => 'ChatRef($id, $title, channel: $isChannel)';
 }
 
+/// What happens when a message matches.
+///
+/// The owner picks one of the three on the home screen: relaying into a
+/// Telegram channel is useless when nobody watches that channel at night, and
+/// a siren on this phone is useless when the alert has to reach other people.
+enum AlertDelivery {
+  /// Forward the original into the target channel.
+  forward,
+
+  /// Post a notification on this phone and play the siren.
+  local,
+
+  /// Both at once.
+  both;
+
+  bool get forwards => this != local;
+  bool get notifies => this != forward;
+
+  static AlertDelivery parse(Object? raw) {
+    for (final value in values) {
+      if (value.name == raw) return value;
+    }
+    return forward;
+  }
+}
+
 /// Everything the monitoring engine needs in order to run.
 class MonitorConfig {
   const MonitorConfig({
@@ -51,6 +77,7 @@ class MonitorConfig {
     this.targetChatId = '',
     this.maxAgeMinutes = defaultMaxAgeMinutes,
     this.chats = const <ChatRef>[],
+    this.delivery = AlertDelivery.forward,
   });
 
   static const int defaultMaxAgeMinutes = 10;
@@ -63,16 +90,18 @@ class MonitorConfig {
   final String targetChatId;
   final int maxAgeMinutes;
   final List<ChatRef> chats;
+  final AlertDelivery delivery;
 
   Duration get maxAge => Duration(minutes: maxAgeMinutes);
 
   /// True when the engine has enough information to start monitoring.
   ///
-  /// No bot token: delivery goes through the owner's own Telegram session.
+  /// No bot token: forwarding goes through the owner's own Telegram session.
+  /// A target channel is only required when something is actually forwarded.
   bool get isRunnable =>
       folderId != null &&
       keywords.any((k) => k.trim().isNotEmpty) &&
-      targetChatId.trim().isNotEmpty;
+      (!delivery.forwards || targetChatId.trim().isNotEmpty);
 
   MonitorConfig copyWith({
     int? folderId,
@@ -81,6 +110,7 @@ class MonitorConfig {
     String? targetChatId,
     int? maxAgeMinutes,
     List<ChatRef>? chats,
+    AlertDelivery? delivery,
   }) => MonitorConfig(
     folderId: folderId ?? this.folderId,
     folderName: folderName ?? this.folderName,
@@ -88,6 +118,7 @@ class MonitorConfig {
     targetChatId: targetChatId ?? this.targetChatId,
     maxAgeMinutes: maxAgeMinutes ?? this.maxAgeMinutes,
     chats: chats ?? this.chats,
+    delivery: delivery ?? this.delivery,
   );
 
   Map<String, dynamic> toJson() => {
@@ -97,6 +128,7 @@ class MonitorConfig {
     'targetChatId': targetChatId,
     'maxAgeMinutes': maxAgeMinutes,
     'chats': [for (final c in chats) c.toJson()],
+    'delivery': delivery.name,
   };
 
   static MonitorConfig fromJson(Map<String, dynamic> json) => MonitorConfig(
@@ -112,6 +144,7 @@ class MonitorConfig {
       for (final c in (json['chats'] as List? ?? const []))
         ChatRef.fromJson(Map<String, dynamic>.from(c as Map)),
     ],
+    delivery: AlertDelivery.parse(json['delivery']),
   );
 }
 

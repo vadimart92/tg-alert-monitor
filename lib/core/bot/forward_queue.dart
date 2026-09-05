@@ -13,7 +13,6 @@ class ForwardTask {
     required this.messageId,
     required this.targetChatId,
     required this.html,
-    this.tag = '',
   });
 
   /// Source chat and message — used to address status updates, and to forward
@@ -26,9 +25,6 @@ class ForwardTask {
 
   /// Self-contained rendering, used when the original cannot be forwarded.
   final String html;
-
-  /// Hashtag line posted under a forwarded original.
-  final String tag;
 }
 
 /// Raised by a delivery attempt to tell the queue how to react.

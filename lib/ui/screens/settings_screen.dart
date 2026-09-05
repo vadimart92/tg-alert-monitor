@@ -32,10 +32,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _saved = false;
   bool _manualTarget = false;
 
+  /// Chosen on the home screen; here it only decides whether a target channel
+  /// is required.
+  late AlertDelivery _delivery;
+
   @override
   void initState() {
     super.initState();
     final config = widget.settings.readConfig();
+    _delivery = config.delivery;
     _apiId = TextEditingController(
       text: widget.settings.apiId == 0 ? '' : '${widget.settings.apiId}',
     );
@@ -125,19 +130,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (value == null) return;
               setState(() => _targetChatId.text = value);
             },
-            validator: (value) =>
-                (value == null || value.isEmpty) ? 'Оберіть канал' : null,
+            validator: (value) => (value == null || value.isEmpty)
+                ? _requiredTargetError('Оберіть канал')
+                : null,
           )
         else
           TextFormField(
             controller: _targetChatId,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Цільовий чат',
-              helperText: '@username або числовий id (-100…)',
-              border: OutlineInputBorder(),
+              helperText: _delivery.forwards
+                  ? '@username або числовий id (-100…)'
+                  : 'Не потрібен у режимі «Локально»',
+              border: const OutlineInputBorder(),
             ),
             validator: (value) {
               final trimmed = (value ?? '').trim();
+              if (trimmed.isEmpty) {
+                return _requiredTargetError('@username або ціле число');
+              }
               if (trimmed.startsWith('@') && trimmed.length > 1) return null;
               if (int.tryParse(trimmed) != null) return null;
               return '@username або ціле число';
@@ -182,6 +193,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ],
     );
   }
+
+  /// A target channel is only needed when matches are forwarded, so in
+  /// «Локально» mode an empty field must not block saving api credentials.
+  String? _requiredTargetError(String message) =>
+      _delivery.forwards ? message : null;
 
   @override
   Widget build(BuildContext context) {

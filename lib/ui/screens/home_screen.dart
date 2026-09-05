@@ -175,6 +175,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 12),
                 _keywordsCard(),
                 const SizedBox(height: 12),
+                _deliveryCard(),
+                const SizedBox(height: 12),
                 _startStopCard(bridge),
               ],
               const SizedBox(height: 12),
@@ -333,7 +335,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Text('Ключові слова', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
           const Text(
-            'Повідомлення пересилається, якщо містить хоча б одне з цих слів.',
+            'Повідомлення вважається збігом, якщо містить хоча б одне з цих '
+            'слів.',
             style: TextStyle(fontSize: 12),
           ),
           const SizedBox(height: 8),
@@ -372,7 +375,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Якщо повідомлення містить таке слово, воно НЕ пересилається — '
+            'Якщо повідомлення містить таке слово, воно НЕ спрацьовує — '
             'навіть якщо ключове слово теж є. Напр. «відбій», «збито».',
             style: TextStyle(fontSize: 12),
           ),
@@ -453,12 +456,96 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ],
   );
 
+  /// Three-position delivery switch.
+  ///
+  /// Forwarding into a channel is what other people see; the local siren is
+  /// what wakes this phone. Neither replaces the other, so «Обидва» is a real
+  /// option rather than a convenience.
+  Widget _deliveryCard() {
+    final delivery = _config.delivery;
+    final target = _targetLabel();
+    final subtitle = switch (delivery) {
+      AlertDelivery.forward =>
+        'Оригінал пересилається в $target. Телефон мовчить.',
+      AlertDelivery.local =>
+        'Сирена і сповіщення на цьому телефоні. Нічого не пересилається.',
+      AlertDelivery.both => 'Пересилання в $target — і сирена тут.',
+    };
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Сповіщення', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<AlertDelivery>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: AlertDelivery.forward,
+                    icon: Icon(Icons.forward_to_inbox, size: 18),
+                    label: Text('Форвард'),
+                  ),
+                  ButtonSegment(
+                    value: AlertDelivery.local,
+                    icon: Icon(Icons.notifications_active, size: 18),
+                    label: Text('Локально'),
+                  ),
+                  ButtonSegment(
+                    value: AlertDelivery.both,
+                    icon: Icon(Icons.done_all, size: 18),
+                    label: Text('Обидва'),
+                  ),
+                ],
+                selected: {delivery},
+                onSelectionChanged: (selection) =>
+                    _persist(_config.copyWith(delivery: selection.first)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(subtitle, style: const TextStyle(fontSize: 12)),
+            if (delivery.notifies) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Сирена звучить на гучності будильника, тож чути її й у '
+                'беззвучному режимі. Гучність і вібрацію можна змінити в '
+                'системних налаштуваннях каналу «Збіги за ключовими словами».',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Names the configured target channel for the delivery description, and
+  /// says so plainly when there is none — the switch is reachable long before
+  /// the channel is picked.
+  String _targetLabel() {
+    final configured = _config.targetChatId.trim();
+    if (configured.isEmpty) return 'канал (ще не вибраний у налаштуваннях)';
+    final id = int.tryParse(configured);
+    for (final target in widget.bridge.botTargets ?? const <ChatRef>[]) {
+      if (target.id == id && target.title.isNotEmpty) return '«${target.title}»';
+    }
+    return '«$configured»';
+  }
+
   Widget _startStopCard(ServiceBridge bridge) {
     final reasons = <String>[
       if (!bridge.isReady) 'потрібен вхід у Telegram',
       if (_config.folderId == null) 'не вибрано папку',
       if (_includes.isEmpty) 'немає ключових слів',
-      if (_config.targetChatId.isEmpty) 'не вибрано цільовий канал',
+      if (_config.delivery.forwards && _config.targetChatId.isEmpty)
+        'не вибрано цільовий канал',
       if (!_notificationsGranted) 'не надано дозвіл на сповіщення',
     ];
 

@@ -19,6 +19,7 @@ class Harness {
     this.events,
     this.savedConfigs,
     this.monitoringFlags,
+    this.alerts,
   );
 
   final FakeTdTransport transport;
@@ -30,9 +31,13 @@ class Harness {
   final List<MonitorConfig> savedConfigs;
   final List<bool> monitoringFlags;
 
+  /// Matches handed to the local notifier.
+  final List<MatchEntry> alerts;
+
   static Future<Harness> create({
     MonitorConfig config = const MonitorConfig(),
     List<int> folderChatIds = const [-100111],
+    bool alertsFail = false,
   }) async {
     final transport = FakeTdTransport();
     final client = TdClient(
@@ -44,6 +49,7 @@ class Harness {
     final events = <Event>[];
     final savedConfigs = <MonitorConfig>[];
     final monitoringFlags = <bool>[];
+    final alerts = <MatchEntry>[];
 
     _installDefaultResponders(transport, folderChatIds);
 
@@ -63,6 +69,10 @@ class Harness {
       config: config,
       now: clock.call,
       forwardInterval: Duration.zero,
+      alert: (entry) async {
+        alerts.add(entry);
+        if (alertsFail) throw StateError('сирена мовчить');
+      },
     );
 
     await engine.start();
@@ -77,6 +87,7 @@ class Harness {
       events,
       savedConfigs,
       monitoringFlags,
+      alerts,
     );
   }
 
@@ -154,7 +165,7 @@ class Harness {
   List<Map<String, dynamic>> get forwards =>
       transport.sentOfType('forwardMessages');
 
-  /// Messages composed by us: the tag line, or a copy when forwarding failed.
+  /// Messages composed by us: a copy sent when forwarding was refused.
   List<Map<String, dynamic>> get texts => transport.sentOfType('sendMessage');
 
   String textOf(Map<String, dynamic> request) =>
@@ -507,7 +518,7 @@ void main() {
       return harness;
     }
 
-    test('the original is forwarded, with the tag underneath', () async {
+    test('the original is forwarded, and nothing else is posted', () async {
       final harness = await monitoring();
 
       harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
@@ -521,10 +532,8 @@ void main() {
       expect(forward['message_ids'], [1000]);
       expect(forward['send_copy'], false);
 
-      // ...followed by the tag as its own short message.
-      expect(harness.texts, hasLength(1));
-      expect(harness.textOf(harness.texts.single), '#шахед');
-      expect(harness.texts.single['chat_id'], -100999);
+      // The keyword tags stay in the journal; the channel gets the post only.
+      expect(harness.texts, isEmpty);
 
       expect(harness.matchLog.appended, hasLength(1));
       expect(harness.matchLog.appended.single.keywords, ['шахед']);
@@ -584,18 +593,79 @@ void main() {
       await harness.dispose();
     });
 
-    test('a failed tag does not fail the delivered forward', () async {
+    test('no local alert fires while forwarding', () async {
       final harness = await monitoring();
-      harness.transport.responders['sendMessage'] = (_) => {
-        '@type': 'error',
-        'code': 400,
-        'message': 'SOMETHING_ELSE',
-      };
 
       harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
       await harness.settle();
 
+      expect(harness.alerts, isEmpty);
+      await harness.dispose();
+    });
+
+    test('«Локально» notifies and forwards nothing', () async {
+      const config = MonitorConfig(
+        folderId: 7,
+        folderName: 'Тривога',
+        keywords: ['шахед'],
+        // No target channel at all: local delivery must not need one.
+        chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
+        delivery: AlertDelivery.local,
+      );
+      final harness = await Harness.create(config: config);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(config);
+      await harness.settle();
+
+      harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
+      await harness.settle();
+
+      expect(harness.alerts, hasLength(1));
+      expect(harness.alerts.single.keywords, ['шахед']);
+      expect(harness.forwards, isEmpty);
+      expect(harness.texts, isEmpty);
+      // The notification is the delivery, so it is what marks the entry sent.
+      expect(harness.matchLog.statusUpdates.single.status, MatchStatus.sent);
+      await harness.dispose();
+    });
+
+    test('a siren that fails marks the match failed', () async {
+      const config = MonitorConfig(
+        folderId: 7,
+        keywords: ['шахед'],
+        chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
+        delivery: AlertDelivery.local,
+      );
+      final harness = await Harness.create(config: config, alertsFail: true);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(config);
+      await harness.settle();
+
+      harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
+      await harness.settle();
+
+      expect(harness.matchLog.statusUpdates.single.status, MatchStatus.failed);
+      expect(
+        harness.matchLog.statusUpdates.single.error,
+        contains('сирена мовчить'),
+      );
+      await harness.dispose();
+    });
+
+    test('«Обидва» does both, and the forward owns the status', () async {
+      final config = _runnableConfig.copyWith(delivery: AlertDelivery.both);
+      final harness = await Harness.create(config: config);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(config);
+      await harness.settle();
+
+      harness.transport.push(harness.textMessage(text: 'Шахед над містом'));
+      await harness.settle();
+
+      expect(harness.alerts, hasLength(1));
       expect(harness.forwards, hasLength(1));
+      // One update only: the notification does not race the queue for it.
+      expect(harness.matchLog.statusUpdates, hasLength(1));
       expect(harness.matchLog.statusUpdates.single.status, MatchStatus.sent);
       await harness.dispose();
     });

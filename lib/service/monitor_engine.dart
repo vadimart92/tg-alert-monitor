@@ -81,6 +81,10 @@ abstract final class ConnectionPhase {
   static const String waitingForNetwork = 'waitingForNetwork';
 }
 
+/// Shows a match on this phone. Injected so the engine stays Flutter-free;
+/// the real implementation is [AlertNotifier] in the service isolate.
+typedef LocalAlert = Future<void> Function(MatchEntry entry);
+
 /// Bounded "already handled" set, keyed by chat and message id.
 class _RecentMessages {
   _RecentMessages(this.capacity);
@@ -118,6 +122,7 @@ class MonitorEngine {
     this.folderRefreshInterval = const Duration(minutes: 30),
     this.connectionStallTimeout = const Duration(minutes: 2),
     Duration forwardInterval = const Duration(milliseconds: 1500),
+    this._alert,
   }) : _config = config,
        _now = now ?? DateTime.now {
     _matcher = KeywordMatcher(config.keywords);
@@ -136,6 +141,7 @@ class MonitorEngine {
   final void Function(Event event) _emit;
   final Future<void> Function(MonitorConfig config) _saveConfig;
   final Future<void> Function(bool active) _saveMonitoringActive;
+  final LocalAlert? _alert;
   final DateTime Function() _now;
 
   final Duration folderRefreshInterval;
@@ -557,12 +563,28 @@ class MonitorEngine {
     _emit(Event(Ev.match, entry.toJson()));
     _emitState();
 
+    final delivery = _config.delivery;
+    if (delivery.notifies) {
+      final error = await _notifyLocally(entry);
+      // With no channel involved the notification *is* the delivery, so it is
+      // what decides the entry's status. Otherwise the forward queue does.
+      if (!delivery.forwards) {
+        _recordStatus(
+          chatId,
+          messageId,
+          error == null ? MatchStatus.sent : MatchStatus.failed,
+          error,
+        );
+      }
+    }
+
+    if (!delivery.forwards) return;
+
     _forwardQueue.enqueue(
       ForwardTask(
         chatId: chatId,
         messageId: messageId,
         targetChatId: _config.targetChatId,
-        tag: MessageFormatter.renderKeywords(keywords),
         html: MessageFormatter.format(
           chatTitle: entry.chatTitle,
           keywords: keywords,
@@ -572,6 +594,25 @@ class MonitorEngine {
         ),
       ),
     );
+  }
+
+  /// Shows the match on this phone. Returns the failure message, or `null`.
+  ///
+  /// Never retried: a siren that arrives minutes late is noise, not an alert.
+  Future<String?> _notifyLocally(MatchEntry entry) async {
+    final alert = _alert;
+    if (alert == null) {
+      const message = 'Локальні сповіщення недоступні в цьому процесі';
+      _logger.warn('local alert requested but no notifier is wired up');
+      return message;
+    }
+    try {
+      await alert(entry);
+      return null;
+    } catch (error) {
+      _logger.error('local alert failed: $error');
+      return '$error';
+    }
   }
 
   Future<String> _messageLink(int chatId, int messageId) async {
@@ -598,8 +639,11 @@ class MonitorEngine {
   ///
   /// The original is forwarded through the owner's own session, so the post
   /// keeps its "forwarded from" header and its media instead of being retyped.
-  /// A bot cannot do this: it is not a member of the monitored channels. The
-  /// tag then goes underneath as a separate short message.
+  /// A bot cannot do this: it is not a member of the monitored channels.
+  ///
+  /// Nothing is posted alongside it. A second message with the matched
+  /// keywords doubled the noise in the target channel for information the
+  /// forwarded post already carries; the journal shows the tags instead.
   ///
   /// Channels published with content protection cannot be forwarded at all, so
   /// those fall back to the self-contained rendering.
@@ -624,16 +668,6 @@ class MonitorEngine {
       return;
     } on TdTimeout {
       throw DeliveryFailure('TDLib не відповів на пересилання');
-    }
-
-    if (task.tag.isNotEmpty) {
-      // A missing tag is not worth failing (and retrying) the whole match for:
-      // the forwarded original is already delivered.
-      try {
-        await _sendText(targetId, task.tag, html: false);
-      } catch (error) {
-        _logger.warn('tag message failed: $error');
-      }
     }
   }
 
@@ -738,22 +772,32 @@ class MonitorEngine {
     return message;
   }
 
-  void _onForwardStatus(ForwardTask task, MatchStatus status, String? error) {
+  /// Writes a delivery outcome to the log and tells the UI about it.
+  void _recordStatus(
+    int chatId,
+    int messageId,
+    MatchStatus status,
+    String? error,
+  ) {
     unawaited(
       _matchLog
-          .updateStatus(task.chatId, task.messageId, status, error: error)
+          .updateStatus(chatId, messageId, status, error: error)
           .catchError(
             (Object e) => _logger.warn('match log update failed: $e'),
           ),
     );
     _emit(
       Event(Ev.matchStatus, {
-        'chatId': task.chatId,
-        'messageId': task.messageId,
+        'chatId': chatId,
+        'messageId': messageId,
         'status': status.name,
         'error': ?error,
       }),
     );
+  }
+
+  void _onForwardStatus(ForwardTask task, MatchStatus status, String? error) {
+    _recordStatus(task.chatId, task.messageId, status, error);
     if (status == MatchStatus.failed && error != null) {
       _emit(
         Event(Ev.error, {'scope': ErrorScope.bot, 'code': 0, 'message': error}),

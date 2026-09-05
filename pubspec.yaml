@@ -19,6 +19,10 @@ dependencies:
   path_provider: ^2.1.0
   # Configuration, shared between the UI and the service isolate.
   shared_preferences: ^2.5.0
+  # The local alert notification and its siren channel.
+  flutter_local_notifications: ^22.3.0
+  # Opens a match in Telegram from the journal.
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
@@ -29,3 +33,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Master copy of the siren. Android plays it from the notification channel,
+  # so the file the app actually sounds is the identical copy in
+  # android/app/src/main/res/raw/ — a raw resource is the only thing a channel
+  # can be given as its sound.
+  assets:
+    - assets/siren_ostap_calm.ogg
