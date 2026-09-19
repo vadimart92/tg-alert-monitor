@@ -34,6 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _targetChatId;
   late final TextEditingController _maxAge;
   late final TextEditingController _botToken;
+  late final TextEditingController _cooldown;
 
   bool _saved = false;
   bool _manualTarget = false;
@@ -54,6 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _targetChatId = TextEditingController(text: config.targetChatId);
     _maxAge = TextEditingController(text: '${config.maxAgeMinutes}');
     _botToken = TextEditingController(text: config.botToken);
+    _cooldown = TextEditingController(text: '${config.alertCooldownSeconds}');
   }
 
   @override
@@ -63,6 +65,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _targetChatId.dispose();
     _maxAge.dispose();
     _botToken.dispose();
+    _cooldown.dispose();
     super.dispose();
   }
 
@@ -76,6 +79,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       targetChatId: _targetChatId.text.trim(),
       maxAgeMinutes: int.parse(_maxAge.text.trim()),
       botToken: _botToken.text.trim(),
+      alertCooldownSeconds: int.parse(_cooldown.text.trim()),
     );
     await settings.writeConfig(config);
     // Apply to a running engine immediately, and keep its copy authoritative.
@@ -302,6 +306,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   return l.rangeFromTo(
                     MonitorConfig.minMaxAgeMinutes,
                     MonitorConfig.maxMaxAgeMinutes,
+                  );
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _cooldown,
+              decoration: InputDecoration(
+                labelText: l.alertCooldownLabel,
+                helperText: l.alertCooldownHelp,
+                helperMaxLines: 4,
+                border: const OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                final parsed = int.tryParse((value ?? '').trim());
+                if (parsed == null ||
+                    parsed < MonitorConfig.minAlertCooldownSeconds ||
+                    parsed > MonitorConfig.maxAlertCooldownSeconds) {
+                  return l.rangeFromTo(
+                    MonitorConfig.minAlertCooldownSeconds,
+                    MonitorConfig.maxAlertCooldownSeconds,
                   );
                 }
                 return null;

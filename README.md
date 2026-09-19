@@ -153,17 +153,21 @@ rules keep that from turning the siren into background noise.
   drop it (`setTimeoutAfter`) and the app also cancels it on its own timer, so
   neither a killed process nor a vendor that ignores the flag leaves yesterday's
   raid on the lock screen.
-* One keyword **sounds at most once every 30 minutes**. Matches in between are
-  still logged and still forwarded — they are noise to a sleeping owner, not to
-  the channel where the alerts are collected. In «Local» mode the journal marks
-  such a match 🔇 and says why.
+* One keyword **sounds at most once every 30 seconds** — «Pause between alerts
+  for one keyword» in the settings, anything from 0 to 3600 s. Matches inside
+  the pause are still logged and still forwarded; they are noise to a sleeping
+  owner, not to the channel where the alerts are collected. In «Local» mode the
+  journal marks such a match 🔇 and says why. **0 sounds every match.**
 
-The cooldown is per keyword, so a second threat still gets through while the
-first is quiet. An alert names every keyword it matched and silences all of
-them: they are all in the body, so they have all been said. A siren that
-**failed** starts no cooldown, because nobody heard it.
+The pause is per keyword, so a second threat still gets through while the first
+is quiet. An alert names every keyword it matched and silences all of them:
+they are all in the body, so they have all been said. A siren that **failed**
+starts no pause, because nobody heard it. The pause is also forgotten when you
+press «Start», when the service restarts, and when a keyword is deleted and
+typed again — whoever is holding the phone should hear the next match.
 
-Both periods live in one place, `AlertPolicy` in
+Changing it in the settings applies immediately, without restarting monitoring.
+The five minutes is not a setting: it is `AlertPolicy.lifetime` in
 [`lib/core/model/app_config.dart`](lib/core/model/app_config.dart).
 
 ### A keyword can have its own voice

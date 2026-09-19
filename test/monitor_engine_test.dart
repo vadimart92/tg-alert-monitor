@@ -44,7 +44,6 @@ class Harness {
     MonitorConfig config = const MonitorConfig(),
     List<int> folderChatIds = const [-100111],
     bool alertsFail = false,
-    Duration alertCooldown = AlertPolicy.cooldown,
     FakeBotApi? botApi,
   }) async {
     final transport = FakeTdTransport();
@@ -79,7 +78,6 @@ class Harness {
       config: config,
       now: clock.call,
       forwardInterval: Duration.zero,
-      alertCooldown: alertCooldown,
       alert: (entry) async {
         alerts.add(entry);
         if (alertsFail) throw StateError('сирена мовчить');
@@ -1193,17 +1191,114 @@ void main() {
       await harness.dispose();
     });
 
-    test('one keyword does not sound twice inside its cooldown', () async {
+    test('the pause out of the box is half a minute', () async {
       const config = MonitorConfig(
         folderId: 7,
         keywords: ['шахед'],
         chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
         delivery: AlertDelivery.local,
       );
-      final harness = await Harness.create(
-        config: config,
-        alertCooldown: const Duration(minutes: 30),
+      expect(config.alertCooldownSeconds, 30);
+
+      final harness = await Harness.create(config: config);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(config);
+      await harness.settle();
+
+      harness.transport.push(
+        harness.textMessage(messageId: 1, text: 'Шахед над містом'),
       );
+      await harness.settle();
+
+      // The same channel repeating itself ten seconds later.
+      harness.clock.advance(const Duration(seconds: 10));
+      harness.transport.push(
+        harness.textMessage(messageId: 2, text: 'Шахед над містом'),
+      );
+      await harness.settle();
+      expect(harness.alerts, hasLength(1));
+
+      // Past the half minute it is news again.
+      harness.clock.advance(const Duration(seconds: 21));
+      harness.transport.push(
+        harness.textMessage(messageId: 3, text: 'Шахед на Дрони'),
+      );
+      await harness.settle();
+      expect(harness.alerts, hasLength(2));
+      await harness.dispose();
+    });
+
+    test('a pause of zero sounds every single match', () async {
+      const config = MonitorConfig(
+        folderId: 7,
+        keywords: ['шахед'],
+        chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
+        delivery: AlertDelivery.local,
+        alertCooldownSeconds: 0,
+      );
+      final harness = await Harness.create(config: config);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(config);
+      await harness.settle();
+
+      for (var id = 1; id <= 3; id++) {
+        harness.transport.push(
+          harness.textMessage(messageId: id, text: 'Шахед над містом'),
+        );
+        await harness.settle();
+      }
+
+      expect(harness.alerts, hasLength(3));
+      expect(
+        harness.matchLog.statusUpdates.map((u) => u.status),
+        everyElement(MatchStatus.sent),
+      );
+      await harness.dispose();
+    });
+
+    test('a pause changed in the settings takes effect at once', () async {
+      const config = MonitorConfig(
+        folderId: 7,
+        keywords: ['шахед'],
+        chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
+        delivery: AlertDelivery.local,
+        alertCooldownSeconds: 1800,
+      );
+      final harness = await Harness.create(config: config);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(config);
+      await harness.settle();
+
+      harness.transport.push(
+        harness.textMessage(messageId: 1, text: 'Шахед над містом'),
+      );
+      await harness.settle();
+
+      // Half an hour was too much, says the owner, and saves 30 seconds.
+      await harness.engine.updateConfig(
+        config.copyWith(alertCooldownSeconds: 30),
+      );
+      harness.clock.advance(const Duration(seconds: 31));
+      harness.transport.push(
+        harness.textMessage(messageId: 2, text: 'Шахед на Дрони'),
+      );
+      await harness.settle();
+
+      // Without restarting monitoring, and without losing the keyword's own
+      // history: the new pause is measured from the alert that did sound.
+      expect(harness.alerts, hasLength(2));
+      await harness.dispose();
+    });
+
+    test('one keyword does not sound twice inside its cooldown', () async {
+      const config = MonitorConfig(
+        folderId: 7,
+        keywords: ['шахед'],
+        chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
+        delivery: AlertDelivery.local,
+        alertCooldownSeconds: 1800,
+      );
+      final harness = await Harness.create(config: config);
       await harness.authenticate();
       await harness.engine.startMonitoring(config);
       await harness.settle();
@@ -1243,11 +1338,9 @@ void main() {
         keywords: ['шахед', 'балістика'],
         chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
         delivery: AlertDelivery.local,
+        alertCooldownSeconds: 1800,
       );
-      final harness = await Harness.create(
-        config: config,
-        alertCooldown: const Duration(minutes: 30),
-      );
+      final harness = await Harness.create(config: config);
       await harness.authenticate();
       await harness.engine.startMonitoring(config);
       await harness.settle();
@@ -1273,11 +1366,9 @@ void main() {
         keywords: ['шахед', 'балістика'],
         chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
         delivery: AlertDelivery.local,
+        alertCooldownSeconds: 1800,
       );
-      final harness = await Harness.create(
-        config: config,
-        alertCooldown: const Duration(minutes: 30),
-      );
+      final harness = await Harness.create(config: config);
       await harness.authenticate();
       await harness.engine.startMonitoring(config);
       await harness.settle();
@@ -1303,12 +1394,9 @@ void main() {
         keywords: ['шахед'],
         chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
         delivery: AlertDelivery.local,
+        alertCooldownSeconds: 1800,
       );
-      final harness = await Harness.create(
-        config: config,
-        alertsFail: true,
-        alertCooldown: const Duration(minutes: 30),
-      );
+      final harness = await Harness.create(config: config, alertsFail: true);
       await harness.authenticate();
       await harness.engine.startMonitoring(config);
       await harness.settle();
@@ -1335,11 +1423,9 @@ void main() {
         keywords: ['шахед'],
         chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
         delivery: AlertDelivery.local,
+        alertCooldownSeconds: 1800,
       );
-      final harness = await Harness.create(
-        config: config,
-        alertCooldown: const Duration(minutes: 30),
-      );
+      final harness = await Harness.create(config: config);
       await harness.authenticate();
       await harness.engine.startMonitoring(config);
       await harness.settle();
@@ -1365,11 +1451,11 @@ void main() {
     });
 
     test('the cooldown holds back the siren, never the forward', () async {
-      final config = _runnableConfig.copyWith(delivery: AlertDelivery.both);
-      final harness = await Harness.create(
-        config: config,
-        alertCooldown: const Duration(minutes: 30),
+      final config = _runnableConfig.copyWith(
+        delivery: AlertDelivery.both,
+        alertCooldownSeconds: 1800,
       );
+      final harness = await Harness.create(config: config);
       await harness.authenticate();
       await harness.engine.startMonitoring(config);
       await harness.settle();

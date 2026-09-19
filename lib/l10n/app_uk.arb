@@ -117,6 +117,21 @@
   "keywordSoundErrorEmpty": "Файл не створено — вибраний рушій синтезу не вміє писати у файл. Спробуйте інший у системних налаштуваннях.",
   "close": "Закрити",
 
+  "durationSeconds": "{count} с",
+  "@durationSeconds": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "durationMinutes": "{count} хв",
+  "@durationMinutes": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "alertCooldownLabel": "Пауза між тривогами для одного слова, с",
+  "alertCooldownHelp": "Скільки одне слово мовчить після того, як прозвучало. Канал пише про один і той самий шахед кілька разів поспіль — пауза прибирає повтори, не чіпаючи нові події. Затримується лише звук на цьому телефоні: збіг однаково йде в журнал і пересилається в канал. 0 — озвучувати кожен збіг.",
+
   "notifications": "Сповіщення",
   "deliveryForward": "Форвард",
   "deliveryLocal": "Локально",
@@ -140,10 +155,10 @@
       "channel": {"type": "String"}
     }
   },
-  "alertPolicyHelp": "Одне слово тривожить не частіше ніж раз на {cooldown} хв. У шторці лишається лише остання тривога, і через {lifetime} хв вона зникає сама.",
+  "alertPolicyHelp": "Одне слово тривожить не частіше ніж раз на {cooldown} — пауза змінюється в налаштуваннях. У шторці лишається лише остання тривога, і через {lifetime} хв вона зникає сама.",
   "@alertPolicyHelp": {
     "placeholders": {
-      "cooldown": {"type": "int"},
+      "cooldown": {"type": "String"},
       "lifetime": {"type": "int"}
     }
   },
@@ -186,10 +201,10 @@
       "link": {"type": "String"}
     }
   },
-  "matchMuted": "Без сирени: це слово вже тривожило менш ніж {minutes} хв тому.",
+  "matchMuted": "Без сирени: це слово вже тривожило менш ніж {pause} тому.",
   "@matchMuted": {
     "placeholders": {
-      "minutes": {"type": "int"}
+      "pause": {"type": "String"}
     }
   },
   "noMatchesYet": "Збігів ще не було",

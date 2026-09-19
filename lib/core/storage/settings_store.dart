@@ -26,6 +26,7 @@ class SettingsStore {
   static const String keyPhoneDisplay = 'phoneDisplay';
   static const String keyAlertDelivery = 'alertDelivery';
   static const String keyBotToken = 'botToken';
+  static const String keyAlertCooldownSeconds = 'alertCooldownSeconds';
 
   final SharedPreferences _prefs;
 
@@ -85,6 +86,9 @@ class SettingsStore {
       chats: chats,
       delivery: AlertDelivery.parse(_prefs.getString(keyAlertDelivery)),
       botToken: _prefs.getString(keyBotToken) ?? '',
+      alertCooldownSeconds:
+          _prefs.getInt(keyAlertCooldownSeconds) ??
+          MonitorConfig.defaultAlertCooldownSeconds,
     );
   }
 
@@ -105,6 +109,13 @@ class SettingsStore {
     );
     await _prefs.setString(keyAlertDelivery, config.delivery.name);
     await _prefs.setString(keyBotToken, config.botToken.trim());
+    await _prefs.setInt(
+      keyAlertCooldownSeconds,
+      config.alertCooldownSeconds.clamp(
+        MonitorConfig.minAlertCooldownSeconds,
+        MonitorConfig.maxAlertCooldownSeconds,
+      ),
+    );
     await writeCachedChats(config.chats);
   }
 

@@ -125,7 +125,6 @@ class MonitorEngine {
     DateTime Function()? now,
     this.folderRefreshInterval = const Duration(minutes: 30),
     this.connectionStallTimeout = const Duration(minutes: 2),
-    this.alertCooldown = AlertPolicy.cooldown,
     Duration forwardInterval = const Duration(milliseconds: 1500),
     this._alert,
     this._botApi,
@@ -168,10 +167,6 @@ class MonitorEngine {
 
   final Duration folderRefreshInterval;
   final Duration connectionStallTimeout;
-
-  /// How long one keyword stays quiet after it has sounded. Injected so a test
-  /// does not have to move the clock half an hour.
-  final Duration alertCooldown;
 
   late final ForwardQueue _forwardQueue;
   late KeywordMatcher _matcher;
@@ -662,13 +657,15 @@ class MonitorEngine {
   /// The others ride along: the alert names every keyword it matched, so the
   /// owner has been told about them too.
   String? _mutedKeywords(List<String> keywords) {
+    final cooldown = _config.alertCooldown;
+    if (cooldown <= Duration.zero) return null;
     final now = _now();
     final waiting = <String>[];
     for (final keyword in keywords) {
       final last = _lastAlertByKeyword[KeywordMatcher.normalize(keyword)];
-      if (last == null || now.difference(last) >= alertCooldown) return null;
-      final left = alertCooldown - now.difference(last);
-      waiting.add('$keyword ${left.inMinutes + 1}m');
+      if (last == null || now.difference(last) >= cooldown) return null;
+      final left = cooldown - now.difference(last);
+      waiting.add('$keyword ${left.inSeconds + 1}s');
     }
     return waiting.join(', ');
   }
