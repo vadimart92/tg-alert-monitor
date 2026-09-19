@@ -76,6 +76,11 @@
   "keywordSoundErrorEmpty": "Nothing was written — the selected speech engine cannot synthesize to a file. Try another one in the system settings.",
   "close": "Close",
 
+  "durationSeconds": "{count} s",
+  "durationMinutes": "{count} min",
+  "alertCooldownLabel": "Pause between alerts for one keyword, s",
+  "alertCooldownHelp": "How long one keyword stays quiet after it has sounded. A channel posts about the same drone several times in a row — the pause removes the repeats without touching a new event. Only the sound on this phone is held back: the match is still logged and still forwarded. 0 — sound every match.",
+
   "notifications": "Notifications",
   "deliveryForward": "Forward",
   "deliveryLocal": "Local",
@@ -84,7 +89,7 @@
   "deliveryLocalHelp": "A siren and a notification on this phone. Nothing is forwarded.",
   "deliveryBothHelp": "Forwarding to {target} — and the siren here.",
   "sirenHelp": "The siren plays at alarm volume, so it is audible on silent. Volume and vibration can be changed in the system settings of the «{channel}» channel.",
-  "alertPolicyHelp": "One keyword raises an alert at most once every {cooldown} min. The shade keeps the newest alert only, and lets go of it after {lifetime} min.",
+  "alertPolicyHelp": "One keyword raises an alert at most once every {cooldown} — the pause is changed in the settings. The shade keeps the newest alert only, and lets go of it after {lifetime} min.",
   "targetNotPicked": "a channel (not picked in the settings yet)",
   "quoted": "«{value}»",
 
@@ -109,7 +114,7 @@
   "clear": "Clear",
   "couldNotOpenLink": "Could not open the link",
   "copied": "Copied: {link}",
-  "matchMuted": "No siren: this keyword alerted less than {minutes} min ago.",
+  "matchMuted": "No siren: this keyword alerted less than {pause} ago.",
   "noMatchesYet": "No matches yet",
   "journalEmpty": "The log is empty",
 

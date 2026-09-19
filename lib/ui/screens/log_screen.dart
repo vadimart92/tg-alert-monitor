@@ -15,6 +15,7 @@ import '../../core/model/match_entry.dart';
 import '../../core/storage/match_log.dart';
 import '../../core/storage/settings_store.dart';
 import '../../l10n/app_localizations.dart';
+import '../duration_label.dart';
 import '../service_bridge.dart';
 import 'diagnostics_screen.dart';
 
@@ -32,6 +33,12 @@ class _LogScreenState extends State<LogScreen> {
   MatchLog? _matchLog;
   bool _loading = true;
 
+  /// The configured pause, for explaining a muted entry. Read once: the
+  /// journal is a snapshot, and a storage read per row would be absurd.
+  Duration _cooldown = const Duration(
+    seconds: MonitorConfig.defaultAlertCooldownSeconds,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -43,7 +50,11 @@ class _LogScreenState extends State<LogScreen> {
     final supportDir = await getApplicationSupportDirectory();
     final log = MatchLog(File('${supportDir.path}/matches.jsonl'));
     final entries = await log.read();
+    // The service isolate writes settings too, so this isolate's cache can be
+    // behind whatever the owner last saved.
+    await widget.settings.reload();
     if (!mounted) return;
+    _cooldown = widget.settings.readConfig().alertCooldown;
     _matchLog = log;
     widget.bridge.setMatches(entries);
     setState(() => _loading = false);
@@ -165,7 +176,9 @@ class _LogScreenState extends State<LogScreen> {
               // between a broken app and a quiet night.
               if (entry.status == MatchStatus.muted)
                 Text(
-                  L.of(context).matchMuted(AlertPolicy.cooldown.inMinutes),
+                  L.of(context).matchMuted(
+                    durationLabel(L.of(context), _cooldown),
+                  ),
                   style: TextStyle(
                     color: Theme.of(context).hintColor,
                     fontSize: 12,

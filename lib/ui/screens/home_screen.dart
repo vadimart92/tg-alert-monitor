@@ -13,6 +13,7 @@ import '../../core/storage/keyword_sound_store.dart';
 import '../../core/storage/settings_store.dart';
 import '../../l10n/app_localizations.dart';
 import '../../service/monitor_engine.dart';
+import '../duration_label.dart';
 import '../service_bridge.dart';
 import 'keyword_sound_sheet.dart';
 import 'log_screen.dart';
@@ -656,7 +657,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               const SizedBox(height: 4),
               Text(
                 l.alertPolicyHelp(
-                  AlertPolicy.cooldown.inMinutes,
+                  durationLabel(l, _config.alertCooldown),
                   AlertPolicy.lifetime.inMinutes,
                 ),
                 style: TextStyle(
