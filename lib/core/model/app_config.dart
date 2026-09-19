@@ -68,6 +68,31 @@ enum AlertDelivery {
   }
 }
 
+/// How the alert on this phone behaves once it fires.
+///
+/// Constants rather than settings, and shared by the three places that have to
+/// agree on them: the engine decides when to sound one, the notifier decides
+/// how long it stays in the shade, and the UI explains both to the owner.
+///
+/// An air-raid channel posts in bursts — five messages about the same drone in
+/// two minutes. A siren for each of them trains its owner to ignore the siren,
+/// which is the one failure mode that matters here.
+abstract final class AlertPolicy {
+  /// One keyword may sound at most this often.
+  ///
+  /// Only the sound on this phone is held back. The match is still logged and
+  /// still forwarded: the burst is noise to a sleeping owner, not to the
+  /// channel where the alerts are collected.
+  static const Duration cooldown = Duration(minutes: 30);
+
+  /// The shade keeps the newest alert only, and lets go of it after this.
+  ///
+  /// An alert nobody acted on within five minutes is history, and a stack of
+  /// them is worse than none: the owner has to swipe through yesterday's raid
+  /// to see whether anything is happening now.
+  static const Duration lifetime = Duration(minutes: 5);
+}
+
 /// Everything the monitoring engine needs in order to run.
 class MonitorConfig {
   const MonitorConfig({

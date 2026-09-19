@@ -30,6 +30,8 @@ dependencies:
   mobile_scanner: ^7.4.0
   http: ^1.6.0
   audioplayers: ^6.8.1
+  # Generates a per-keyword spoken alert with the device's own TTS engine.
+  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:
