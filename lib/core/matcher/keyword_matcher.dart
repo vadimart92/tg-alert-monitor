@@ -60,6 +60,15 @@ class KeywordMatcher {
   /// Shortest stem worth searching for; below this a stem matches far too much.
   static const int _minStemLength = 3;
 
+  /// Same, for the к/г/х cut — one character longer, deliberately.
+  ///
+  /// Dropping an ending only removes grammar. Dropping the consonant in front
+  /// of it removes part of the word itself, and on a short word that lands on
+  /// a different word entirely: `чайки` -> `чайк` is the one wanted, `чай`
+  /// (tea) is not. `Боярка` -> `бояр` is still four characters, so the cases
+  /// the rule exists for keep working.
+  static const int _minStemBeforeAlternation = 4;
+
   /// The substring actually searched for a given keyword.
   ///
   /// `Білогородка` becomes `білогород`, which matches «на Білогородку»,
@@ -85,7 +94,7 @@ class KeywordMatcher {
 
     // Only after an ending was removed does the alternation matter.
     if (_alternating.contains(stem[stem.length - 1]) &&
-        stem.length - 1 >= _minStemLength) {
+        stem.length - 1 >= _minStemBeforeAlternation) {
       stem = stem.substring(0, stem.length - 1);
     }
     return stem;

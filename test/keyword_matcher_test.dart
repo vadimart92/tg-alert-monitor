@@ -108,6 +108,27 @@ void main() {
       expect(KeywordMatcher.stemOf('Боярка'), 'бояр');
     });
 
+    test('keeps the к when cutting it would leave another word', () {
+      // «чайки» -> «чайк». Cutting the к as well gives «чай» — tea — which
+      // turns up in anything at all and drowns the real alerts.
+      expect(KeywordMatcher.stemOf('чайки'), 'чайк');
+      expect(KeywordMatcher.stemOf('Чайки'), 'чайк');
+    });
+
+    test('«чайки» matches its own forms and not «чай»', () {
+      final matcher = KeywordMatcher(['Чайки']);
+      for (final text in [
+        'Чайки',
+        'у Чайках',
+        'над Чайками',
+        'ціль на Чайки',
+      ]) {
+        expect(matcher.match(text), ['Чайки'], reason: text);
+      }
+      expect(matcher.match('гарячий чай і тишу'), isEmpty);
+      expect(matcher.match('чайник на кухні'), isEmpty);
+    });
+
     test('leaves a keyword that already ends in a consonant alone', () {
       for (final keyword in [
         'шахед',

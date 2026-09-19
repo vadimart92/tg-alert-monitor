@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/bot/message_formatter.dart';
 import '../../core/ipc/protocol.dart';
+import '../../core/model/app_config.dart';
 import '../../core/model/match_entry.dart';
 import '../../core/storage/match_log.dart';
 import '../../core/storage/settings_store.dart';
@@ -144,6 +145,7 @@ class _LogScreenState extends State<LogScreen> {
             MatchStatus.sent => '✅',
             MatchStatus.queued => '⏳',
             MatchStatus.failed => '❌',
+            MatchStatus.muted => '🔇',
           }, style: const TextStyle(fontSize: 20)),
           title: Text(
             '${_hhmm(entry.time)} · ${entry.chatTitle}',
@@ -159,6 +161,16 @@ class _LogScreenState extends State<LogScreen> {
                 style: TextStyle(color: Theme.of(context).colorScheme.primary),
               ),
               Text(preview),
+              // Why this one was silent. Without it the owner is left deciding
+              // between a broken app and a quiet night.
+              if (entry.status == MatchStatus.muted)
+                Text(
+                  L.of(context).matchMuted(AlertPolicy.cooldown.inMinutes),
+                  style: TextStyle(
+                    color: Theme.of(context).hintColor,
+                    fontSize: 12,
+                  ),
+                ),
               if (entry.status == MatchStatus.failed && entry.error != null)
                 Text(
                   entry.error!,

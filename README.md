@@ -90,6 +90,10 @@ Without these, Android will stop the monitoring:
 * The ending is trimmed, and so is a `к`/`г`/`х` in front of it: those
   alternate in the locative case (Білогород**к**а → у Білогород**ц**і), so the
   stem has to end before them.
+* That second cut needs **four** characters left over, one more than the first.
+  Dropping an ending only removes grammar; dropping the consonant in front of
+  it removes part of the word, and on a short word that lands on a different
+  word: `чайки` → `чайк` is wanted, `чай` — tea — is not.
 * **To set the stem yourself, enter a word ending in a consonant.** Those are
   left alone: `перемог` stays `перемог`.
 * The stemmer is simple and deliberately knows no morphology. Sometimes the
@@ -137,6 +141,52 @@ A notification channel's sound and importance are frozen when Android first
 creates it, so changing them in the app has no effect on an install that
 already has the channel. When they have to change, the channel id is versioned
 and the old one deleted.
+
+### One alert at a time, and not too often
+
+A raid is a burst: five messages about the same drone inside two minutes. Three
+rules keep that from turning the siren into background noise.
+
+* The shade holds **one** alert. A new one replaces the one before it — the
+  journal is where the history lives.
+* That alert **disappears by itself after five minutes**. Android is told to
+  drop it (`setTimeoutAfter`) and the app also cancels it on its own timer, so
+  neither a killed process nor a vendor that ignores the flag leaves yesterday's
+  raid on the lock screen.
+* One keyword **sounds at most once every 30 minutes**. Matches in between are
+  still logged and still forwarded — they are noise to a sleeping owner, not to
+  the channel where the alerts are collected. In «Local» mode the journal marks
+  such a match 🔇 and says why.
+
+The cooldown is per keyword, so a second threat still gets through while the
+first is quiet. An alert names every keyword it matched and silences all of
+them: they are all in the body, so they have all been said. A siren that
+**failed** starts no cooldown, because nobody heard it.
+
+Both periods live in one place, `AlertPolicy` in
+[`lib/core/model/app_config.dart`](lib/core/model/app_config.dart).
+
+### A keyword can have its own voice
+
+Tap a keyword chip on the home screen: the phone's own speech engine generates
+a short spoken alert («Увага! Чайки. Чайки»), and **that** is what plays for
+that keyword instead of the siren. The phrase is editable — the word being
+searched for and the word being said do not have to be the same, which matters
+because a keyword is often a stem.
+
+* The sound is generated once, when you press the button, and kept as a .wav in
+  `<support>/keyword_sounds/`. The alert itself only plays a file, so a slow or
+  broken speech engine can never delay or swallow an alert.
+* It plays on the alarm stream, exactly like the siren.
+* The chip shows a speaker when a keyword has a sound. Delete the sound and the
+  siren comes back; delete the keyword and its sound goes with it.
+* The engine is chosen per phrase, not taken from the phone's settings. A
+  Galaxy defaults to Samsung TTS, which has **no Ukrainian at all**, while
+  Google TTS sits next to it and does — so the app asks the default engine
+  first and then every other one installed. The sheet shows which engine and
+  language actually spoke, and warns when nothing on the phone speaks
+  Ukrainian (Settings → Language and input → Text-to-speech).
+* Exclusion words never get a sound: nothing sounds for them.
 
 ## Who posts the alert: you, or a bot
 
@@ -212,7 +262,9 @@ nothing happened:
 ## Journal
 
 On the «Matches» tab, a **tap** opens the message in Telegram and a **long
-press** copies its link.
+press** copies its link. The mark on the left is the delivery outcome: ✅ sent,
+⏳ queued, ❌ failed, 🔇 matched but deliberately not sounded (see the cooldown
+above).
 
 ## What does not trigger
 
@@ -255,6 +307,7 @@ flutter build apk --release --split-per-abi
 | `lib/core/td/` | FFI to `libtdjson.so`, the receive isolate, request/response correlation by `@extra` |
 | `lib/core/bot/` | Message rendering and the send queue with its rate limits and retries |
 | `lib/core/matcher/` | Keyword matching |
+| `lib/core/audio/` | Generating a keyword's spoken alert with the phone's speech engine |
 | `lib/core/ipc/` | The UI ↔ service protocol |
 | `lib/service/` | `MonitorEngine` (all the logic, no Flutter) and the foreground service's `TaskHandler` |
 | `lib/ui/` | Screens and the bridge to the service |

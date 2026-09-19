@@ -5,13 +5,16 @@
 /// the UI isolate is usually dead.
 library;
 
+import 'dart:async';
 import 'dart:ui' show Color;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../core/bot/message_formatter.dart';
+import '../core/model/app_config.dart';
 import '../core/model/match_entry.dart';
+import '../core/storage/keyword_sound_store.dart';
 import '../l10n/app_localizations.dart';
 
 /// Shows one heads-up notification per match and plays the siren.
@@ -33,12 +36,17 @@ import '../l10n/app_localizations.dart';
 /// with one exception: if playback fails, the alert falls back to the
 /// sounding channel, because a siren the vendor might suppress still beats no
 /// siren at all.
+///
+/// The shade holds one alert at a time, for five minutes. Both are deliberate:
+/// see [AlertPolicy].
 class AlertNotifier {
   AlertNotifier({
     required L strings,
+    KeywordSoundStore? sounds,
     FlutterLocalNotificationsPlugin? plugin,
     this.onLog,
   }) : _s = strings,
+       _soundStore = sounds,
        _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
   /// The normal channel: silent, because this class plays the siren itself.
@@ -70,8 +78,20 @@ class AlertNotifier {
   /// Body limit — Android truncates far earlier than Telegram does.
   static const int bodyLimit = 800;
 
+  /// One id for every alert, so a new one replaces the one before it.
+  ///
+  /// A raid produces a dozen matches and the shade used to keep all of them.
+  /// What the owner needs on waking is what is happening *now*, not an
+  /// archive — that is what the journal is for.
+  static const int alertId = 1;
+
   final FlutterLocalNotificationsPlugin _plugin;
   final L _s;
+
+  /// Where a keyword's own generated sound is looked up. Null in tests and on
+  /// installs that have never generated one.
+  final KeywordSoundStore? _soundStore;
+
   final void Function(String message)? onLog;
 
   /// Built on first use: constructing a player costs a platform call, and most
@@ -80,8 +100,13 @@ class AlertNotifier {
 
   bool _initialised = false;
 
-  /// One id per match, so a second alert does not replace the first.
-  int _nextId = 1;
+  /// Takes the current alert out of the shade once it is stale.
+  ///
+  /// Android's own `timeoutAfter` does the same thing and survives this process
+  /// dying, which a timer cannot. This is here because it is ours: the vendor
+  /// layer that refuses to sound a notification in Mute mode is not a layer to
+  /// trust with the cleanup either.
+  Timer? _expiry;
 
   AndroidNotificationChannel get _quietChannel => AndroidNotificationChannel(
     channelId,
@@ -126,14 +151,26 @@ class AlertNotifier {
         onLog?.call('could not delete channel $retired: $error');
       }
     }
+    // An alert left over from a process that was killed before its timer
+    // fired: nobody will act on it now, and it would sit above the fresh one.
+    try {
+      await _plugin.cancel(id: alertId);
+    } catch (_) {
+      // Nothing there to cancel is the normal case.
+    }
     _initialised = true;
   }
 
-  /// Plays the siren on the alarm stream. Returns whether it started.
+  /// Plays the alert on the alarm stream. Returns whether it started.
   ///
   /// The alarm usage is the whole point: a ringer set to silent or vibrate
   /// mutes the ring and notification streams, never the alarm one.
-  Future<bool> _playSiren() async {
+  ///
+  /// A keyword that has had a sound generated for it speaks instead of the
+  /// siren — the owner picked those words, so hearing which one fired is worth
+  /// more than hearing that something did.
+  Future<bool> _playAlert(MatchEntry entry) async {
+    final source = await _source(entry);
     try {
       final player = _player ??= AudioPlayer();
       await player.setAudioContext(
@@ -145,7 +182,7 @@ class AlertNotifier {
           ),
         ),
       );
-      await player.play(AssetSource(soundAsset));
+      await player.play(source);
       return true;
     } catch (error) {
       onLog?.call('siren playback failed: $error');
@@ -153,14 +190,29 @@ class AlertNotifier {
     }
   }
 
+  /// The keyword's own voice, or the siren.
+  Future<Source> _source(MatchEntry entry) async {
+    final sounds = _soundStore;
+    if (sounds != null) {
+      try {
+        final file = await sounds.soundForMatch(entry.keywords);
+        if (file != null) return DeviceFileSource(file.path);
+      } catch (error) {
+        // Never fatal: the siren is always there.
+        onLog?.call('keyword sound lookup failed: $error');
+      }
+    }
+    return AssetSource(soundAsset);
+  }
+
   /// Posts one alert. Never throws: a failed notification must not stop the
   /// match from being logged or forwarded.
   Future<void> notify(MatchEntry entry) async {
     try {
       await init();
-      final played = await _playSiren();
+      final played = await _playAlert(entry);
       await _plugin.show(
-        id: _nextId++,
+        id: alertId,
         title: '🔴 ${entry.chatTitle.isEmpty ? _s.match : entry.chatTitle}',
         body: _body(entry),
         notificationDetails: NotificationDetails(
@@ -181,6 +233,7 @@ class AlertNotifier {
             ledColor: alertColor,
             ledOnMs: 500,
             ledOffMs: 500,
+            timeoutAfter: AlertPolicy.lifetime.inMilliseconds,
             ticker: entry.keywords.join(' '),
             styleInformation: BigTextStyleInformation(
               _escape(_body(entry)),
@@ -190,9 +243,30 @@ class AlertNotifier {
         ),
         payload: entry.link,
       );
+      _scheduleExpiry();
     } catch (error) {
       onLog?.call('local notification failed: $error');
     }
+  }
+
+  /// Restarts the five-minute clock. The newest alert decides when the shade
+  /// goes quiet, not the first one.
+  void _scheduleExpiry() {
+    _expiry?.cancel();
+    _expiry = Timer(AlertPolicy.lifetime, () async {
+      try {
+        await _plugin.cancel(id: alertId);
+      } catch (error) {
+        onLog?.call('could not clear the alert: $error');
+      }
+    });
+  }
+
+  /// Stops the expiry timer. The service isolate is being torn down, so a
+  /// pending alert is left for Android's own `timeoutAfter` to collect.
+  void dispose() {
+    _expiry?.cancel();
+    _expiry = null;
   }
 
   /// Keyword line first — it is what the owner reads on the lock screen.
