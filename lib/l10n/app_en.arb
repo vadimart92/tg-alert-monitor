@@ -46,8 +46,8 @@
 
   "keywords": "Keywords",
   "keywordsHelp": "A message counts as a match when it contains at least one of these words.",
-  "keywordHint": "e.g. Зенітка",
-  "stemHelp": "The grey text is the stem actually searched for: it covers declined forms («на Зенітку», «у Зенітці»). To set the stem yourself, enter a word ending in a consonant.",
+  "keywordHint": "e.g. Київ",
+  "stemHelp": "The grey text is the stem actually searched for: it covers declined forms («на зенітку», «у зенітці»). To set the stem yourself, enter a word ending in a consonant.",
   "exclusions": "Exclusion words",
   "exclusionsHelp": "A message containing such a word does NOT trigger — even when a keyword is present too. E.g. «відбій», «збито».",
   "exclusionHint": "e.g. відбій",

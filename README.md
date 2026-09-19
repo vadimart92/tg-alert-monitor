@@ -15,7 +15,7 @@ Ukrainian and English, and follows the device language.
 1. Signs in to Telegram **as a user** (through TDLib) — a bot cannot see the
    messages of channels it does not own.
 2. You pick a Telegram folder from a list and enter keywords
-   (`шахед`, `балістика`, `Дрон`…).
+   (`шахед`, `балістика`, `Київ`…).
 3. After «Start» a foreground service reads new messages in that folder's
    chats — with the screen off, after the app is swiped out of Recents, and
    after the phone reboots.
@@ -84,16 +84,16 @@ Without these, Android will stop the monitoring:
 * A match is a **case-insensitive substring**. `шахед` finds `Шахеди`,
   `ШАХЕДІВ`, `шахедами`.
 * A keyword is reduced to its **stem**, so declined forms are covered:
-  `Зенітка` is searched for as `зеніт`, which finds «на Зенітку»,
-  «у Зенітці», «над Зеніткою». The stem is shown in grey on the chip —
-  the guess is never applied invisibly.
+  `зенітка` is searched for as `зеніт`, which finds «на зенітку», «у зенітці»,
+  «над зеніткою». The stem is shown in grey on the chip — the guess is never
+  applied invisibly.
 * The ending is trimmed, and so is a `к`/`г`/`х` in front of it: those
-  alternate in the locative case (Зеніт**к**а → у Зеніт**ц**і), so the
-  stem has to end before them.
+  alternate in the locative case (зеніт**к**а → у зеніт**ц**і), so the stem has
+  to end before them.
 * That second cut needs **four** characters left over, one more than the first.
   Dropping an ending only removes grammar; dropping the consonant in front of
   it removes part of the word, and on a short word that lands on a different
-  word: `танки` → `танк` is wanted, `чай` — tea — is not.
+  word: `танки` → `танк` is wanted, `тан` — which is inside «с**тан**» — is not.
 * **To set the stem yourself, enter a word ending in a consonant.** Those are
   left alone: `перемог` stays `перемог`.
 * The stemmer is simple and deliberately knows no morphology. Sometimes the
@@ -173,7 +173,7 @@ The five minutes is not a setting: it is `AlertPolicy.lifetime` in
 ### A keyword can have its own voice
 
 Tap a keyword chip on the home screen: the phone's own speech engine generates
-a short spoken alert («Увага! Танки. Танки»), and **that** is what plays for
+a short spoken alert («Увага! Київ. Київ»), and **that** is what plays for
 that keyword instead of the siren. The phrase is editable — the word being
 searched for and the word being said do not have to be the same, which matters
 because a keyword is often a stem.

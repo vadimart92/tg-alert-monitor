@@ -20,7 +20,7 @@ void main() {
   group('hashtag', () {
     test('turns a plain keyword into a tag', () {
       expect(MessageFormatter.hashtag('шахед'), '#шахед');
-      expect(MessageFormatter.hashtag('  Дрон  '), '#Дрон');
+      expect(MessageFormatter.hashtag('  Київ  '), '#Київ');
     });
 
     test('joins words with underscores, since a space would end the tag', () {

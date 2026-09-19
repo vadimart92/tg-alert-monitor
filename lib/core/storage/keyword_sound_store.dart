@@ -66,8 +66,8 @@ class KeywordSoundStore {
 
   /// A keyword's audio file, whether or not it has been generated yet.
   ///
-  /// Keyed by the normalised keyword, so a sound made for «Танки» is still
-  /// found after the owner retypes the word as «танки».
+  /// Keyed by the normalised keyword, so a sound made for «Київ» is still
+  /// found after the owner retypes the word as «київ».
   File audioFileFor(String keyword) =>
       File('${directory.path}/${_stem(keyword)}$_audioExtension');
 

@@ -53,8 +53,8 @@ class KeywordMatcher {
   // per keyword and nothing extra per message.
   static const String _vowels = 'аяуюеєиіїо';
 
-  /// Consonants that alternate before the locative ending: Зеніт*к*а but
-  /// у Зеніт*ц*і. Cutting the stem before them covers both.
+  /// Consonants that alternate before the locative ending: зеніт*к*а but
+  /// у зеніт*ц*і. Cutting the stem before them covers both.
   static const String _alternating = 'кгх';
 
   /// Shortest stem worth searching for; below this a stem matches far too much.
@@ -64,17 +64,16 @@ class KeywordMatcher {
   ///
   /// Dropping an ending only removes grammar. Dropping the consonant in front
   /// of it removes part of the word itself, and on a short word that lands on
-  /// a different word entirely: `танки` -> `танк` is the one wanted, `чай`
-  /// (tea) is not. `Ставка` -> `став` is still four characters, so the cases
-  /// the rule exists for keep working.
+  /// a different word entirely: `танки` -> `танк` is the one wanted, `тан`
+  /// (which sits inside «стан») is not. `ставка` -> `став` is still four
+  /// characters, so the cases the rule exists for keep working.
   static const int _minStemBeforeAlternation = 4;
 
   /// The substring actually searched for a given keyword.
   ///
-  /// `Зенітка` becomes `зеніт`, which matches «на Зенітку»,
-  /// «у Зенітці» and «над Зеніткою». A keyword that already ends in a
-  /// consonant is left alone, so typing the stem yourself always wins over the
-  /// automatic guess.
+  /// `зенітка` becomes `зеніт`, which matches «на зенітку», «у зенітці» and
+  /// «над зеніткою». A keyword that already ends in a consonant is left alone,
+  /// so typing the stem yourself always wins over the automatic guess.
   ///
   /// Multi-word keywords are never stemmed: `балістика на` is a phrase, and
   /// trimming its last word would change what it means.

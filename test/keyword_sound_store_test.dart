@@ -26,37 +26,37 @@ void main() {
   }
 
   test('a keyword without a sound reads back as nothing', () async {
-    expect(await store.read('танки'), isNull);
-    expect(await store.soundForMatch(['танки']), isNull);
-    expect(await store.withSound(['танки']), isEmpty);
+    expect(await store.read('Київ'), isNull);
+    expect(await store.soundForMatch(['Київ']), isNull);
+    expect(await store.withSound(['Київ']), isEmpty);
   });
 
   test('a generated sound comes back with the phrase it says', () async {
-    await generate('танки', phrase: 'Увага! Танки. Танки');
+    await generate('Київ', phrase: 'Увага! Київ. Київ');
 
-    final sound = await store.read('танки');
+    final sound = await store.read('Київ');
     expect(sound, isNotNull);
-    expect(sound!.phrase, 'Увага! Танки. Танки');
+    expect(sound!.phrase, 'Увага! Київ. Київ');
     expect(await sound.file.exists(), isTrue);
   });
 
   test('case and spacing do not hide a keyword\'s sound', () async {
-    await generate('Танки');
+    await generate('Київ');
 
     // The keyword list keeps what the owner typed, and they retype it.
-    expect(await store.read('  танки '), isNotNull);
-    expect(await store.soundForMatch(['ТАНКИ']), isNotNull);
+    expect(await store.read('  київ '), isNotNull);
+    expect(await store.soundForMatch(['КИЇВ']), isNotNull);
   });
 
   test('two keywords never share a file', () async {
-    await generate('танки');
+    await generate('Київ');
     await generate('шахед');
 
     expect(
-      store.audioFileFor('танки').path,
+      store.audioFileFor('Київ').path,
       isNot(store.audioFileFor('шахед').path),
     );
-    expect(await store.withSound(['танки', 'шахед']), {'танки', 'шахед'});
+    expect(await store.withSound(['Київ', 'шахед']), {'Київ', 'шахед'});
   });
 
   test('the first matched keyword with a sound is the one that speaks', () async {
@@ -68,29 +68,29 @@ void main() {
   });
 
   test('an empty file is not playable and falls back to the siren', () async {
-    final file = await store.prepare('танки');
+    final file = await store.prepare('Київ');
     await file.writeAsBytes(const []);
 
-    expect(await store.read('танки'), isNull);
-    expect(await store.soundForMatch(['танки']), isNull);
+    expect(await store.read('Київ'), isNull);
+    expect(await store.soundForMatch(['Київ']), isNull);
   });
 
   test('removing a keyword\'s sound takes its phrase with it', () async {
-    await generate('танки');
-    await store.remove('танки');
+    await generate('Київ');
+    await store.remove('Київ');
 
-    expect(await store.read('танки'), isNull);
-    expect(await store.audioFileFor('танки').exists(), isFalse);
+    expect(await store.read('Київ'), isNull);
+    expect(await store.audioFileFor('Київ').exists(), isFalse);
     expect(store.directory.listSync(), isEmpty);
   });
 
   test('pruning drops sounds of keywords that are gone', () async {
-    await generate('танки');
+    await generate('Київ');
     await generate('шахед');
 
     await store.prune(['шахед']);
 
-    expect(await store.read('танки'), isNull);
+    expect(await store.read('Київ'), isNull);
     expect(await store.read('шахед'), isNotNull);
   });
 

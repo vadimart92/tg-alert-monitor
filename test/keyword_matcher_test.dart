@@ -18,40 +18,38 @@ void main() {
     });
 
     test('returns every hit in configuration order, not text order', () {
-      final matcher = KeywordMatcher(['балістика', 'шахед', 'Дрони']);
-      expect(matcher.match('Дрони: шахед, потім балістика'), [
+      final matcher = KeywordMatcher(['балістика', 'шахед', 'дрони']);
+      expect(matcher.match('дрони, шахед, потім балістика'), [
         'балістика',
         'шахед',
-        'Дрони',
+        'дрони',
       ]);
     });
 
-    test('a place name typed in full still matches its declined forms', () {
+    test('a word typed in full still matches its declined forms', () {
       // The keyword is reduced to a stem, so the owner does not have to know
-      // that "Дрони" is not a substring of "Дронами".
-      expect(KeywordMatcher(['Дрони']).match('над Дронами'), ['Дрони']);
-      expect(KeywordMatcher(['Дрон']).match('над Дронами'), ['Дрон']);
+      // that "дрони" is not a substring of "дронами".
+      expect(KeywordMatcher(['дрони']).match('над дронами'), ['дрони']);
+      expect(KeywordMatcher(['дрон']).match('над дронами'), ['дрон']);
     });
 
     test('covers the cases an alert channel actually writes', () {
-      final matcher = KeywordMatcher(['Зенітка', 'Ставка']);
+      final matcher = KeywordMatcher(['зенітка', 'ставка']);
       const texts = [
-        'Ціль курсом на Зенітку',
-        'Вибухи у Зенітці',
-        'Над Зеніткою БпЛА',
-        'Зенітка, укриття',
+        'Ціль курсом на зенітку',
+        'Працює зенітка',
+        'Над зеніткою БпЛА',
+        'Вибухи біля зенітки',
       ];
       for (final text in texts) {
-        expect(matcher.match(text), ['Зенітка'], reason: text);
+        expect(matcher.match(text), ['зенітка'], reason: text);
       }
-      expect(matcher.match('Вибух у Ставці'), ['Ставка']);
-      expect(matcher.match('Ціль на Ставку'), ['Ставка']);
+      expect(matcher.match('Зміни у ставці'), ['ставка']);
+      expect(matcher.match('Ціль на ставку'), ['ставка']);
     });
 
     test('the reported keyword is the one the owner typed, not the stem', () {
-      expect(KeywordMatcher(['Зенітка']).match('на Зенітку'), [
-        'Зенітка',
-      ]);
+      expect(KeywordMatcher(['зенітка']).match('на зенітку'), ['зенітка']);
     });
 
     test('no keywords means no match', () {
@@ -98,35 +96,35 @@ void main() {
   group('KeywordMatcher.stemOf', () {
     test('cuts a trailing inflectional vowel', () {
       expect(KeywordMatcher.stemOf('ракета'), 'ракет');
-      expect(KeywordMatcher.stemOf('Дрони'), 'дрон');
-      expect(KeywordMatcher.stemOf('Сила'), 'сил');
+      expect(KeywordMatcher.stemOf('дрони'), 'дрон');
+      expect(KeywordMatcher.stemOf('сила'), 'сил');
     });
 
     test('also cuts к/г/х, which alternate in the locative case', () {
-      // Зенітка -> у Зенітці, Ставка -> у Ставці.
-      expect(KeywordMatcher.stemOf('Зенітка'), 'зеніт');
-      expect(KeywordMatcher.stemOf('Ставка'), 'став');
+      // зенітка -> у зенітці, ставка -> у ставці.
+      expect(KeywordMatcher.stemOf('зенітка'), 'зеніт');
+      expect(KeywordMatcher.stemOf('ставка'), 'став');
     });
 
     test('keeps the к when cutting it would leave another word', () {
-      // «танки» -> «танк». Cutting the к as well gives «чай» — tea — which
-      // turns up in anything at all and drowns the real alerts.
+      // «танки» -> «танк». Cutting the к as well gives «тан», which sits
+      // inside «стан» — a word every second alert contains.
       expect(KeywordMatcher.stemOf('танки'), 'танк');
       expect(KeywordMatcher.stemOf('Танки'), 'танк');
     });
 
-    test('«танки» matches its own forms and not «чай»', () {
+    test('«танки» matches its own forms and not «стан»', () {
       final matcher = KeywordMatcher(['Танки']);
       for (final text in [
         'Танки',
-        'у Танках',
-        'над Танками',
-        'ціль на Танки',
+        'у танках',
+        'над танками',
+        'колона танків',
       ]) {
         expect(matcher.match(text), ['Танки'], reason: text);
       }
-      expect(matcher.match('гарячий чай і тишу'), isEmpty);
-      expect(matcher.match('чайник на кухні'), isEmpty);
+      expect(matcher.match('стан тривоги'), isEmpty);
+      expect(matcher.match('тане сніг'), isEmpty);
     });
 
     test('leaves a keyword that already ends in a consonant alone', () {
@@ -177,7 +175,7 @@ void main() {
     test(
       'isStemmed reports whether the search term differs from the input',
       () {
-        expect(KeywordMatcher.isStemmed('Зенітка'), isTrue);
+        expect(KeywordMatcher.isStemmed('зенітка'), isTrue);
         expect(KeywordMatcher.isStemmed('шахед'), isFalse);
         expect(KeywordMatcher.isStemmed('балістика на'), isFalse);
       },
@@ -195,8 +193,8 @@ void main() {
   group('KeywordMatcher.sanitize', () {
     test('drops blanks and case-insensitive duplicates, keeping order', () {
       expect(
-        KeywordMatcher.sanitize(['Шахед', ' ', 'шахед', 'ШАХЕД', 'Дрони']),
-        ['Шахед', 'Дрони'],
+        KeywordMatcher.sanitize(['Шахед', ' ', 'шахед', 'ШАХЕД', 'Київ']),
+        ['Шахед', 'Київ'],
       );
     });
 

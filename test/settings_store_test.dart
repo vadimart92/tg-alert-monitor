@@ -114,9 +114,9 @@ void main() {
   test('keywords are de-duplicated case-insensitively on write', () async {
     final store = await openWith({});
     await store.writeConfig(
-      const MonitorConfig(keywords: ['Шахед', 'шахед', ' ', 'ШАХЕД', 'Дрон']),
+      const MonitorConfig(keywords: ['Шахед', 'шахед', ' ', 'ШАХЕД', 'Київ']),
     );
-    expect(store.readConfig().keywords, ['Шахед', 'Дрон']);
+    expect(store.readConfig().keywords, ['Шахед', 'Київ']);
   });
 
   test('maxAgeMinutes is clamped to the documented range', () async {

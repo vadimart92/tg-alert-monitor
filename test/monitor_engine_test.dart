@@ -1221,7 +1221,7 @@ void main() {
       // Past the half minute it is news again.
       harness.clock.advance(const Duration(seconds: 21));
       harness.transport.push(
-        harness.textMessage(messageId: 3, text: 'Шахед на Дрони'),
+        harness.textMessage(messageId: 3, text: 'Шахед над Києвом'),
       );
       await harness.settle();
       expect(harness.alerts, hasLength(2));
@@ -1280,7 +1280,7 @@ void main() {
       );
       harness.clock.advance(const Duration(seconds: 31));
       harness.transport.push(
-        harness.textMessage(messageId: 2, text: 'Шахед на Дрони'),
+        harness.textMessage(messageId: 2, text: 'Шахед над Києвом'),
       );
       await harness.settle();
 
@@ -1311,7 +1311,7 @@ void main() {
       // A raid: the same channel posts about the same drone four minutes later.
       harness.clock.advance(const Duration(minutes: 4));
       harness.transport.push(
-        harness.textMessage(messageId: 2, text: 'Шахед на Дрони'),
+        harness.textMessage(messageId: 2, text: 'Шахед над Києвом'),
       );
       await harness.settle();
 
@@ -1407,7 +1407,7 @@ void main() {
       await harness.settle();
       harness.clock.advance(const Duration(minutes: 1));
       harness.transport.push(
-        harness.textMessage(messageId: 2, text: 'Шахед на Дрони'),
+        harness.textMessage(messageId: 2, text: 'Шахед над Києвом'),
       );
       await harness.settle();
 
@@ -1442,7 +1442,7 @@ void main() {
       await harness.engine.updateConfig(config);
       harness.clock.advance(const Duration(minutes: 1));
       harness.transport.push(
-        harness.textMessage(messageId: 2, text: 'Шахед на Дрони'),
+        harness.textMessage(messageId: 2, text: 'Шахед над Києвом'),
       );
       await harness.settle();
 
@@ -1466,7 +1466,7 @@ void main() {
       await harness.settle();
       harness.clock.advance(const Duration(minutes: 1));
       harness.transport.push(
-        harness.textMessage(messageId: 2, text: 'Шахед на Дрони'),
+        harness.textMessage(messageId: 2, text: 'Шахед над Києвом'),
       );
       await harness.settle();
 
