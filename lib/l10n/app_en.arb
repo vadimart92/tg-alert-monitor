@@ -79,7 +79,7 @@
   "durationSeconds": "{count} s",
   "durationMinutes": "{count} min",
   "alertCooldownLabel": "Pause between alerts for one keyword, s",
-  "alertCooldownHelp": "How long one keyword stays quiet after it has sounded. A channel posts about the same drone several times in a row — the pause removes the repeats without touching a new event. Only the sound on this phone is held back: the match is still logged and still forwarded. 0 — sound every match.",
+  "alertCooldownHelp": "How long one keyword stays quiet after it has sounded: it removes the repeats about one event. Only the sound is held back — the match is still logged and still forwarded. 0 — sound every match.",
 
   "notifications": "Notifications",
   "deliveryForward": "Forward",
