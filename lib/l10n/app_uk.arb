@@ -75,6 +75,63 @@
   "newExclusion": "Новий виняток",
   "newKeyword": "Нове слово",
 
+  "keywordSoundHint": "Натисніть на слово, щоб згенерувати для нього окремий голосовий сигнал.",
+  "keywordSoundTooltip": "Окремий звук для цього слова",
+  "keywordSoundTitle": "Звук для «{keyword}»",
+  "@keywordSoundTitle": {
+    "placeholders": {
+      "keyword": {"type": "String"}
+    }
+  },
+  "keywordSoundHelp": "Телефон сам озвучить цю фразу й збереже її у файл. Для цього слова вона лунає замість сирени — так само на гучності будильника.",
+  "keywordSoundPhrase": "Що вимовити",
+  "keywordSoundPhraseDefault": "Увага! {keyword}. {keyword}",
+  "@keywordSoundPhraseDefault": {
+    "description": "Default spoken phrase; the keyword is said twice so a three-second alert is hard to miss.",
+    "placeholders": {
+      "keyword": {"type": "String"}
+    }
+  },
+  "keywordSoundGenerate": "Згенерувати",
+  "keywordSoundRegenerate": "Згенерувати заново",
+  "keywordSoundWorking": "Генерую…",
+  "keywordSoundPlay": "Прослухати",
+  "keywordSoundDelete": "Видалити звук",
+  "keywordSoundNone": "Звуку немає — лунає сирена.",
+  "keywordSoundReady": "Звук готовий: «{phrase}»",
+  "@keywordSoundReady": {
+    "placeholders": {
+      "phrase": {"type": "String"}
+    }
+  },
+  "keywordSoundVoice": "Голос: {voice}",
+  "@keywordSoundVoice": {
+    "description": "Which TTS engine and language spoke the generated file, e.g. com.google.android.tts/uk-UA.",
+    "placeholders": {
+      "voice": {"type": "String"}
+    }
+  },
+  "keywordSoundNoVoice": "Українського голосу на телефоні немає, тож слово прочитає чужий. Встановити: Налаштування → Мова й введення → Синтез мовлення.",
+  "keywordSoundErrorEngine": "Синтез мовлення на цьому телефоні недоступний.",
+  "keywordSoundErrorTimeout": "Синтез не завершився. Спробуйте ще раз або коротшу фразу.",
+  "keywordSoundErrorEmpty": "Файл не створено — вибраний рушій синтезу не вміє писати у файл. Спробуйте інший у системних налаштуваннях.",
+  "close": "Закрити",
+
+  "durationSeconds": "{count} с",
+  "@durationSeconds": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "durationMinutes": "{count} хв",
+  "@durationMinutes": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "alertCooldownLabel": "Пауза між тривогами для одного слова, с",
+  "alertCooldownHelp": "Скільки одне слово мовчить після того, як прозвучало: прибирає повтори про ту саму подію. Затримується лише звук — збіг однаково йде в журнал і в канал. 0 — озвучувати кожен збіг.",
+
   "notifications": "Сповіщення",
   "deliveryForward": "Форвард",
   "deliveryLocal": "Локально",
@@ -96,6 +153,13 @@
   "@sirenHelp": {
     "placeholders": {
       "channel": {"type": "String"}
+    }
+  },
+  "alertPolicyHelp": "Одне слово тривожить не частіше ніж раз на {cooldown} — пауза змінюється в налаштуваннях. У шторці лишається лише остання тривога, і через {lifetime} хв вона зникає сама.",
+  "@alertPolicyHelp": {
+    "placeholders": {
+      "cooldown": {"type": "String"},
+      "lifetime": {"type": "int"}
     }
   },
   "targetNotPicked": "канал (ще не вибраний у налаштуваннях)",
@@ -135,6 +199,12 @@
   "@copied": {
     "placeholders": {
       "link": {"type": "String"}
+    }
+  },
+  "matchMuted": "Без сирени: це слово вже тривожило менш ніж {pause} тому.",
+  "@matchMuted": {
+    "placeholders": {
+      "pause": {"type": "String"}
     }
   },
   "noMatchesYet": "Збігів ще не було",

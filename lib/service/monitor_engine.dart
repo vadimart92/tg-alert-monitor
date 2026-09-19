@@ -195,6 +195,13 @@ class MonitorEngine {
   final Map<int, String> _chatTitles = <int, String>{};
   final _RecentMessages _recent = _RecentMessages(2000);
 
+  /// When each keyword last made this phone sound, by normalised keyword.
+  ///
+  /// Deliberately not persisted: after a restart the owner has a phone in
+  /// their hand and no idea what it has been quiet about, so the first match
+  /// of a session should always be heard.
+  final Map<String, DateTime> _lastAlertByKeyword = <String, DateTime>{};
+
   DateTime? _connectionDegradedSince;
   DateTime? _lastFolderRefresh;
   bool _loggingOut = false;
@@ -591,16 +598,30 @@ class MonitorEngine {
 
     final delivery = _config.delivery;
     if (delivery.notifies) {
-      final error = await _notifyLocally(entry);
-      // With no channel involved the notification *is* the delivery, so it is
-      // what decides the entry's status. Otherwise the forward queue does.
-      if (!delivery.forwards) {
-        _recordStatus(
-          chatId,
-          messageId,
-          error == null ? MatchStatus.sent : MatchStatus.failed,
-          error,
-        );
+      final muted = _mutedKeywords(keywords);
+      if (muted != null) {
+        _logger.info('siren held back: $muted');
+        // With no channel involved there is nothing else in flight, so the
+        // journal says plainly that this one was heard and not sounded.
+        if (!delivery.forwards) {
+          _recordStatus(chatId, messageId, MatchStatus.muted, null);
+        }
+      } else {
+        final error = await _notifyLocally(entry);
+        // A siren that never sounded must not start a cooldown: the owner
+        // heard nothing, so the next match has to try again.
+        if (error == null) _startCooldown(keywords);
+        // With no channel involved the notification *is* the delivery, so it
+        // is what decides the entry's status. Otherwise the forward queue
+        // does.
+        if (!delivery.forwards) {
+          _recordStatus(
+            chatId,
+            messageId,
+            error == null ? MatchStatus.sent : MatchStatus.failed,
+            error,
+          );
+        }
       }
     }
 
@@ -628,6 +649,33 @@ class MonitorEngine {
         ),
       ),
     );
+  }
+
+  /// Why this match must stay silent, or `null` when it may sound.
+  ///
+  /// A match sounds when at least one of its keywords is out of its cooldown.
+  /// The others ride along: the alert names every keyword it matched, so the
+  /// owner has been told about them too.
+  String? _mutedKeywords(List<String> keywords) {
+    final cooldown = _config.alertCooldown;
+    if (cooldown <= Duration.zero) return null;
+    final now = _now();
+    final waiting = <String>[];
+    for (final keyword in keywords) {
+      final last = _lastAlertByKeyword[KeywordMatcher.normalize(keyword)];
+      if (last == null || now.difference(last) >= cooldown) return null;
+      final left = cooldown - now.difference(last);
+      waiting.add('$keyword ${left.inSeconds + 1}s');
+    }
+    return waiting.join(', ');
+  }
+
+  /// Silences every keyword of an alert that has just sounded.
+  void _startCooldown(List<String> keywords) {
+    final now = _now();
+    for (final keyword in keywords) {
+      _lastAlertByKeyword[KeywordMatcher.normalize(keyword)] = now;
+    }
   }
 
   /// Shows the match on this phone. Returns the failure message, or `null`.
@@ -912,6 +960,13 @@ class MonitorEngine {
     _config = keepChats ? config.copyWith(chats: _config.chats) : config;
 
     _matcher = KeywordMatcher(_config.keywords);
+    // A word that was deleted and typed again should be heard, not held to a
+    // cooldown from a life it does not remember.
+    final live = {
+      for (final keyword in _config.keywords)
+        KeywordMatcher.normalize(keyword),
+    };
+    _lastAlertByKeyword.removeWhere((keyword, _) => !live.contains(keyword));
     await _saveConfig(_config);
     _logger.info(
       'config updated: ${_config.keywords.length} keywords, '
@@ -939,6 +994,9 @@ class MonitorEngine {
     _monitoring = true;
     _startedAt = _now();
     _recent.clear();
+    // A fresh session starts audible: whoever just pressed «Старт» is holding
+    // the phone and wants to hear that it works.
+    _lastAlertByKeyword.clear();
     if (config.chats.isNotEmpty) _adoptChats(config.chats);
     _emitState();
     _logger.info(

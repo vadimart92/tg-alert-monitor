@@ -5,11 +5,19 @@ library;
 enum MatchStatus {
   queued,
   sent,
-  failed;
+  failed,
+
+  /// Matched, logged, and deliberately not sounded: the same keyword had
+  /// already raised an alert inside `AlertPolicy.cooldown`.
+  ///
+  /// Only reachable when the local notification *is* the delivery. With a
+  /// channel involved the forward still went out and owns the status.
+  muted;
 
   static MatchStatus parse(String? raw) => switch (raw) {
     'sent' => MatchStatus.sent,
     'failed' => MatchStatus.failed,
+    'muted' => MatchStatus.muted,
     _ => MatchStatus.queued,
   };
 }

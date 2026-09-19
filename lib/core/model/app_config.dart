@@ -68,6 +68,21 @@ enum AlertDelivery {
   }
 }
 
+/// How the alert on this phone behaves once it fires.
+///
+/// The pause between two alerts for one keyword is a setting
+/// ([MonitorConfig.alertCooldownSeconds]) — how much repetition is noise
+/// depends on the channels being watched, and only their owner knows. What is
+/// left here is the part with no judgement in it.
+abstract final class AlertPolicy {
+  /// The shade keeps the newest alert only, and lets go of it after this.
+  ///
+  /// An alert nobody acted on within five minutes is history, and a stack of
+  /// them is worse than none: the owner has to swipe through yesterday's raid
+  /// to see whether anything is happening now.
+  static const Duration lifetime = Duration(minutes: 5);
+}
+
 /// Everything the monitoring engine needs in order to run.
 class MonitorConfig {
   const MonitorConfig({
@@ -79,11 +94,24 @@ class MonitorConfig {
     this.chats = const <ChatRef>[],
     this.delivery = AlertDelivery.forward,
     this.botToken = '',
+    this.alertCooldownSeconds = defaultAlertCooldownSeconds,
   });
 
   static const int defaultMaxAgeMinutes = 10;
   static const int minMaxAgeMinutes = 1;
   static const int maxMaxAgeMinutes = 120;
+
+  /// Long enough to swallow the two or three posts a channel makes about one
+  /// event, short enough that the next event is still an event.
+  static const int defaultAlertCooldownSeconds = 30;
+
+  /// Zero is a real answer: every match sounds, as it did before this setting
+  /// existed.
+  static const int minAlertCooldownSeconds = 0;
+
+  /// An hour. Past that the owner is not silencing a burst, they are turning
+  /// the keyword off — which the keyword list already does, and visibly.
+  static const int maxAlertCooldownSeconds = 3600;
 
   final int? folderId;
   final String folderName;
@@ -100,7 +128,16 @@ class MonitorConfig {
   /// messages never notify your other devices, a bot's do.
   final String botToken;
 
+  /// How long one keyword stays quiet after it has sounded on this phone.
+  ///
+  /// Only the sound is held back. The match is still logged and still
+  /// forwarded: a burst is noise to a sleeping owner, not to the channel where
+  /// the alerts are collected.
+  final int alertCooldownSeconds;
+
   Duration get maxAge => Duration(minutes: maxAgeMinutes);
+
+  Duration get alertCooldown => Duration(seconds: alertCooldownSeconds);
 
   /// True when the engine has enough information to start monitoring.
   ///
@@ -123,6 +160,7 @@ class MonitorConfig {
     List<ChatRef>? chats,
     AlertDelivery? delivery,
     String? botToken,
+    int? alertCooldownSeconds,
   }) => MonitorConfig(
     folderId: folderId ?? this.folderId,
     folderName: folderName ?? this.folderName,
@@ -132,6 +170,7 @@ class MonitorConfig {
     chats: chats ?? this.chats,
     delivery: delivery ?? this.delivery,
     botToken: botToken ?? this.botToken,
+    alertCooldownSeconds: alertCooldownSeconds ?? this.alertCooldownSeconds,
   );
 
   Map<String, dynamic> toJson() => {
@@ -143,6 +182,7 @@ class MonitorConfig {
     'chats': [for (final c in chats) c.toJson()],
     'delivery': delivery.name,
     'botToken': botToken,
+    'alertCooldownSeconds': alertCooldownSeconds,
   };
 
   static MonitorConfig fromJson(Map<String, dynamic> json) => MonitorConfig(
@@ -160,6 +200,9 @@ class MonitorConfig {
     ],
     delivery: AlertDelivery.parse(json['delivery']),
     botToken: json['botToken'] as String? ?? '',
+    alertCooldownSeconds:
+        (json['alertCooldownSeconds'] as num?)?.toInt() ??
+        defaultAlertCooldownSeconds,
   );
 }
 

@@ -38,6 +38,7 @@ void main() {
         ChatRef(id: -100222, title: 'Група Б'),
       ],
       delivery: AlertDelivery.both,
+      alertCooldownSeconds: 90,
     );
 
     await store.writeConfig(config);
@@ -50,7 +51,37 @@ void main() {
     expect(restored.maxAgeMinutes, 25);
     expect(restored.chats, config.chats);
     expect(restored.delivery, AlertDelivery.both);
+    expect(restored.alertCooldownSeconds, 90);
     expect(restored.isRunnable, isTrue);
+  });
+
+  test('an empty store yields the default alert pause', () async {
+    final store = await openWith({});
+
+    expect(
+      store.readConfig().alertCooldownSeconds,
+      MonitorConfig.defaultAlertCooldownSeconds,
+    );
+    expect(
+      store.readConfig().alertCooldown,
+      const Duration(seconds: MonitorConfig.defaultAlertCooldownSeconds),
+    );
+  });
+
+  test('an out-of-range alert pause is clamped on the way in', () async {
+    final store = await openWith({});
+
+    await store.writeConfig(const MonitorConfig(alertCooldownSeconds: 99999));
+    expect(
+      store.readConfig().alertCooldownSeconds,
+      MonitorConfig.maxAlertCooldownSeconds,
+    );
+
+    await store.writeConfig(const MonitorConfig(alertCooldownSeconds: -5));
+    expect(
+      store.readConfig().alertCooldownSeconds,
+      MonitorConfig.minAlertCooldownSeconds,
+    );
   });
 
   test('«Локально» is runnable without a target channel', () async {

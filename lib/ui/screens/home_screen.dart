@@ -1,16 +1,21 @@
 /// Status, folder picker, keywords, start/stop and permission cards.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../../core/ipc/protocol.dart';
 import '../../core/matcher/keyword_matcher.dart';
 import '../../core/model/app_config.dart';
+import '../../core/storage/keyword_sound_store.dart';
 import '../../core/storage/settings_store.dart';
 import '../../l10n/app_localizations.dart';
 import '../../service/monitor_engine.dart';
+import '../duration_label.dart';
 import '../service_bridge.dart';
+import 'keyword_sound_sheet.dart';
 import 'log_screen.dart';
 import 'login_screen.dart';
 import 'settings_screen.dart';
@@ -39,6 +44,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _batteryUnrestricted = true;
   bool _showChats = false;
 
+  /// Where per-keyword sounds live. Null until the app support directory has
+  /// been resolved, which is one platform call at startup.
+  KeywordSoundStore? _sounds;
+
+  /// Keywords that have a generated sound, for the speaker mark on the chip.
+  Set<String> _voiced = const <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -48,9 +60,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // Both need localised strings for the service notification, so they run
       // from here rather than from `App`, which sits above `MaterialApp`.
       ServiceBridge.initTask(l);
+      // Not behind the service: the keyword chips must become tappable even if
+      // starting the service is what goes wrong.
+      unawaited(_openSoundStore());
       await widget.bridge.ensureServiceRunning(l);
       await _refreshPermissions();
     });
+  }
+
+  /// Opens the sound store and drops sounds of keywords that are gone.
+  ///
+  /// Pruning here rather than on delete: a keyword can also disappear through
+  /// a scanned setup or an edit made on the other isolate, and an orphaned
+  /// sound is invisible — nothing in the UI would ever offer to remove it.
+  Future<void> _openSoundStore() async {
+    try {
+      final store = await KeywordSoundStore.open();
+      await store.prune(_includes);
+      final voiced = await store.withSound(_includes);
+      if (!mounted) return;
+      setState(() {
+        _sounds = store;
+        _voiced = voiced;
+      });
+    } catch (_) {
+      // Sounds are an extra; the siren works without them.
+    }
+  }
+
+  Future<void> _refreshVoiced() async {
+    final store = _sounds;
+    if (store == null) return;
+    final voiced = await store.withSound(_includes);
+    if (!mounted) return;
+    setState(() => _voiced = voiced);
+  }
+
+  /// Generate, listen to or delete the sound of one keyword.
+  Future<void> _editSound(String keyword) async {
+    final store = _sounds;
+    if (store == null) return;
+    await showKeywordSoundSheet(
+      context: context,
+      store: store,
+      keyword: keyword,
+    );
+    await _refreshVoiced();
   }
 
   @override
@@ -121,6 +176,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _removeKeyword(String keyword, {required bool isExclusion}) {
     final entry = isExclusion ? '$exclusionPrefix$keyword' : keyword;
     _persist(_config.copyWith(keywords: [..._config.keywords]..remove(entry)));
+    // A sound would otherwise outlive the word it belongs to, and nothing left
+    // in the UI could reach it.
+    if (!isExclusion) unawaited(_dropSound(keyword));
+  }
+
+  Future<void> _dropSound(String keyword) async {
+    await _sounds?.remove(keyword);
+    await _refreshVoiced();
   }
 
   bool get _canStart =>
@@ -150,6 +213,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     await widget.settings.reload();
     if (mounted) setState(() => _config = widget.settings.readConfig());
+    // A scan replaces the keyword list wholesale, so the sounds of the words it
+    // replaced have nothing left to belong to.
+    await _openSoundStore();
   }
 
   @override
@@ -412,6 +478,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
           ],
+          if (_includes.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              l.keywordSoundHint,
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).hintColor,
+              ),
+            ),
+          ],
           const Divider(height: 28),
           Row(
             children: [
@@ -443,6 +519,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Chips for one of the two lists; the grey suffix is the stem actually
   /// searched for, so an automatic guess is never invisible.
+  ///
+  /// A keyword chip is also the way into its own alert sound, and carries a
+  /// speaker when it has one. Exclusions never speak: nothing sounds for them.
   Widget _chips(List<String> keywords, {required bool isExclusion}) {
     if (keywords.isEmpty) {
       return Padding(
@@ -459,8 +538,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       runSpacing: 4,
       children: [
         for (final keyword in keywords)
-          Chip(
+          InputChip(
             backgroundColor: isExclusion ? scheme.errorContainer : null,
+            avatar: (!isExclusion && _voiced.contains(keyword))
+                ? Icon(Icons.record_voice_over, size: 18, color: scheme.primary)
+                : null,
+            tooltip: isExclusion ? null : l.keywordSoundTooltip,
+            onPressed: (isExclusion || _sounds == null)
+                ? null
+                : () => _editSound(keyword),
             label: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -563,6 +649,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               const SizedBox(height: 4),
               Text(
                 l.sirenHelp(l.matchChannelName),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                l.alertPolicyHelp(
+                  durationLabel(l, _config.alertCooldown),
+                  AlertPolicy.lifetime.inMinutes,
+                ),
                 style: TextStyle(
                   fontSize: 11,
                   color: Theme.of(context).hintColor,

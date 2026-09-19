@@ -74,5 +74,10 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
         </intent>
+        <!-- Same rule for the speech engine that generates a keyword's spoken
+             alert: without this the app cannot see any TTS service at all. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
+        </intent>
     </queries>
 </manifest>

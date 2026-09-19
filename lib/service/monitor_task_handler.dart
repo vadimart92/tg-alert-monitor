@@ -15,6 +15,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/bot/bot_api.dart';
 import '../core/ipc/protocol.dart';
+import '../core/storage/keyword_sound_store.dart';
 import '../core/storage/match_log.dart';
 import '../core/storage/settings_store.dart';
 import '../core/td/td_client.dart';
@@ -122,6 +123,11 @@ class MonitorTaskHandler extends TaskHandler {
     // Survives a TDLib restart: the channel only has to be created once.
     final notifier = _notifier ??= AlertNotifier(
       strings: strings,
+      // Read straight off disk at alert time, so a sound generated a second
+      // ago in the UI isolate is already the one that plays.
+      sounds: KeywordSoundStore(
+        Directory('${supportDir.path}/${KeywordSoundStore.directoryName}'),
+      ),
       onLog: logger.warn,
     );
     unawaited(
@@ -406,6 +412,7 @@ class MonitorTaskHandler extends TaskHandler {
   Future<void> _shutdown() async {
     final engine = _engine;
     final client = _client;
+    _notifier?.dispose();
     engine?.markClosing();
     await engine?.dispose();
 
