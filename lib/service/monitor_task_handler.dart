@@ -128,6 +128,8 @@ class MonitorTaskHandler extends TaskHandler {
       sounds: KeywordSoundStore(
         Directory('${supportDir.path}/${KeywordSoundStore.directoryName}'),
       ),
+      // One file, rewritten by every alert that is read out loud.
+      speechFile: File('${supportDir.path}/alert_speech.wav'),
       onLog: logger.warn,
     );
     unawaited(

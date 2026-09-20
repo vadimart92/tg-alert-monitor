@@ -27,6 +27,7 @@ class SettingsStore {
   static const String keyAlertDelivery = 'alertDelivery';
   static const String keyBotToken = 'botToken';
   static const String keyAlertCooldownSeconds = 'alertCooldownSeconds';
+  static const String keySpeakMessage = 'speakMessage';
 
   final SharedPreferences _prefs;
 
@@ -89,6 +90,7 @@ class SettingsStore {
       alertCooldownSeconds:
           _prefs.getInt(keyAlertCooldownSeconds) ??
           MonitorConfig.defaultAlertCooldownSeconds,
+      speakMessage: _prefs.getBool(keySpeakMessage) ?? false,
     );
   }
 
@@ -116,6 +118,7 @@ class SettingsStore {
         MonitorConfig.maxAlertCooldownSeconds,
       ),
     );
+    await _prefs.setBool(keySpeakMessage, config.speakMessage);
     await writeCachedChats(config.chats);
   }
 

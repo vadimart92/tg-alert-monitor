@@ -39,6 +39,7 @@ void main() {
       ],
       delivery: AlertDelivery.both,
       alertCooldownSeconds: 90,
+      speakMessage: true,
     );
 
     await store.writeConfig(config);
@@ -52,11 +53,15 @@ void main() {
     expect(restored.chats, config.chats);
     expect(restored.delivery, AlertDelivery.both);
     expect(restored.alertCooldownSeconds, 90);
+    expect(restored.speakMessage, isTrue);
     expect(restored.isRunnable, isTrue);
   });
 
   test('an empty store yields the default alert pause', () async {
     final store = await openWith({});
+
+    // Reading messages out loud is opt-in.
+    expect(store.readConfig().speakMessage, isFalse);
 
     expect(
       store.readConfig().alertCooldownSeconds,

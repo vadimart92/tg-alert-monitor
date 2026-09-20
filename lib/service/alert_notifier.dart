@@ -6,11 +6,13 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui' show Color;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../core/audio/keyword_voice.dart';
 import '../core/bot/message_formatter.dart';
 import '../core/model/app_config.dart';
 import '../core/model/match_entry.dart';
@@ -43,10 +45,14 @@ class AlertNotifier {
   AlertNotifier({
     required L strings,
     KeywordSoundStore? sounds,
+    File? speechFile,
+    KeywordVoice? voice,
     FlutterLocalNotificationsPlugin? plugin,
     this.onLog,
   }) : _s = strings,
        _soundStore = sounds,
+       _speechOutput = speechFile,
+       _speechEngine = voice,
        _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
   /// The normal channel: silent, because this class plays the siren itself.
@@ -78,6 +84,17 @@ class AlertNotifier {
   /// Body limit — Android truncates far earlier than Telegram does.
   static const int bodyLimit = 800;
 
+  /// How much of a message is read out.
+  ///
+  /// Long enough for the sentence that matters — an alert channel puts the
+  /// direction and the target first — and short enough that the phone stops
+  /// talking while the owner still cares.
+  static const int speechLimit = 300;
+
+  /// How long the spoken message waits for the siren to finish before it
+  /// starts anyway. Only reached if the alert sound never reports completion.
+  static const Duration sirenPatience = Duration(seconds: 12);
+
   /// One id for every alert, so a new one replaces the one before it.
   ///
   /// A raid produces a dozen matches and the shade used to keep all of them.
@@ -92,11 +109,23 @@ class AlertNotifier {
   /// installs that have never generated one.
   final KeywordSoundStore? _soundStore;
 
+  /// Where the message being read out is synthesised. One file, overwritten by
+  /// every alert: only the newest is ever played, and a folder slowly filling
+  /// with recordings of last week's alerts is not worth keeping.
+  final File? _speechOutput;
+
+  /// Built on first use, and only when the owner turned reading on.
+  KeywordVoice? _speechEngine;
+
   final void Function(String message)? onLog;
 
   /// Built on first use: constructing a player costs a platform call, and most
   /// runs of this app never raise a single alert.
   AudioPlayer? _player;
+
+  /// A second player for the spoken message, so that stopping the voice does
+  /// not stop the siren and vice versa.
+  AudioPlayer? _voicePlayer;
 
   bool _initialised = false;
 
@@ -161,10 +190,23 @@ class AlertNotifier {
     _initialised = true;
   }
 
-  /// Plays the alert on the alarm stream. Returns whether it started.
-  ///
   /// The alarm usage is the whole point: a ringer set to silent or vibrate
-  /// mutes the ring and notification streams, never the alarm one.
+  /// mutes the ring and notification streams, never the alarm one. The spoken
+  /// message uses it too — being read the message by a phone that refused to
+  /// sound the siren would be a strange kind of alert.
+  static final AudioContext _alarmContext = AudioContext(
+    android: const AudioContextAndroid(
+      usageType: AndroidUsageType.alarm,
+      contentType: AndroidContentType.sonification,
+      audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+    ),
+  );
+
+  /// Completes when the current alert sound stops. Replaced by every alert,
+  /// and awaited by the spoken message so the two do not talk over each other.
+  Future<void> _alertSoundFinished = Future<void>.value();
+
+  /// Plays the alert on the alarm stream. Returns whether it started.
   ///
   /// A keyword that has had a sound generated for it speaks instead of the
   /// siren — the owner picked those words, so hearing which one fired is worth
@@ -173,19 +215,25 @@ class AlertNotifier {
     final source = await _source(entry);
     try {
       final player = _player ??= AudioPlayer();
-      await player.setAudioContext(
-        AudioContext(
-          android: const AudioContextAndroid(
-            usageType: AndroidUsageType.alarm,
-            contentType: AndroidContentType.sonification,
-            audioFocus: AndroidAudioFocus.gainTransientMayDuck,
-          ),
-        ),
-      );
+      await player.setAudioContext(_alarmContext);
+      // Subscribed before playback starts: a sound short enough to finish
+      // first would otherwise leave the message waiting for an event that has
+      // already been and gone.
+      //
+      // `then` before `timeout` is not decoration. `onPlayerComplete` is typed
+      // `Stream<void>` but is really a stream of `AudioEvent`, so `.first`
+      // hands back a future whose *runtime* type argument is `AudioEvent` —
+      // and `timeout` then demands an `onTimeout` returning one. The analyzer
+      // sees none of this; the phone throws at the first alert.
+      _alertSoundFinished = player.onPlayerComplete.first
+          .then<void>((_) {})
+          .timeout(sirenPatience, onTimeout: () {})
+          .catchError((Object _) {});
       await player.play(source);
       return true;
     } catch (error) {
       onLog?.call('siren playback failed: $error');
+      _alertSoundFinished = Future<void>.value();
       return false;
     }
   }
@@ -207,9 +255,15 @@ class AlertNotifier {
 
   /// Posts one alert. Never throws: a failed notification must not stop the
   /// match from being logged or forwarded.
-  Future<void> notify(MatchEntry entry) async {
+  ///
+  /// With [speakText] the phone reads the message out once the siren has had
+  /// its say. Synthesis starts before the siren does and runs while it plays,
+  /// so the voice costs the alert no time at all.
+  Future<void> notify(MatchEntry entry, {bool speakText = false}) async {
     try {
       await init();
+      await _stopSpeech();
+      final speech = speakText ? _synthesize(entry) : null;
       final played = await _playAlert(entry);
       await _plugin.show(
         id: alertId,
@@ -244,9 +298,65 @@ class AlertNotifier {
         payload: entry.link,
       );
       _scheduleExpiry();
+      if (speech != null) await _speak(await speech);
     } catch (error) {
       onLog?.call('local notification failed: $error');
     }
+  }
+
+  /// Writes the message to [_speechFile]. Returns it, or null on any failure.
+  ///
+  /// Every failure here is survivable — the siren has already sounded — so
+  /// this reports into the log and never throws.
+  Future<File?> _synthesize(MatchEntry entry) async {
+    final file = _speechOutput;
+    final text = _speechText(entry);
+    if (file == null || text.isEmpty) return null;
+    try {
+      await file.parent.create(recursive: true);
+      final voice = _speechEngine ??= KeywordVoice();
+      await voice.synthesize(
+        phrase: text,
+        file: file,
+        preferred: KeywordVoice.languageFor(text, fallback: _s.voiceLanguage),
+      );
+      return file;
+    } catch (error) {
+      onLog?.call('reading the message aloud failed: $error');
+      return null;
+    }
+  }
+
+  /// Plays the synthesised message once the alert sound is done with.
+  Future<void> _speak(File? file) async {
+    if (file == null) return;
+    try {
+      await _alertSoundFinished;
+      final player = _voicePlayer ??= AudioPlayer();
+      await player.setAudioContext(_alarmContext);
+      await player.play(DeviceFileSource(file.path));
+    } catch (error) {
+      onLog?.call('speaking the message failed: $error');
+    }
+  }
+
+  Future<void> _stopSpeech() async {
+    try {
+      await _voicePlayer?.stop();
+    } catch (_) {
+      // Nothing playing is the normal case.
+    }
+  }
+
+  /// What is read out: the message, cut to something a person will sit
+  /// through. An alert channel's post can run to a screenful, and a phone
+  /// reciting it at three in the morning stops being an alert.
+  String _speechText(MatchEntry entry) {
+    final text = entry.text.trim();
+    if (text.length <= speechLimit) return text;
+    final cut = _safeCut(text, speechLimit);
+    final lastSpace = text.lastIndexOf(' ', cut);
+    return text.substring(0, lastSpace > speechLimit ~/ 2 ? lastSpace : cut);
   }
 
   /// Restarts the five-minute clock. The newest alert decides when the shade
@@ -267,6 +377,7 @@ class AlertNotifier {
   void dispose() {
     _expiry?.cancel();
     _expiry = null;
+    unawaited(_stopSpeech());
   }
 
   /// Keyword line first — it is what the owner reads on the lock screen.

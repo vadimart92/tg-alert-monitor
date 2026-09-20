@@ -76,6 +76,10 @@
   "keywordSoundErrorEmpty": "Nothing was written — the selected speech engine cannot synthesize to a file. Try another one in the system settings.",
   "close": "Close",
 
+  "voiceLanguage": "en-US",
+  "speakMessage": "Read the message out loud",
+  "speakMessageHelp": "After the siren the phone reads the post itself — the first {limit} characters. Same voice as the keywords, and at alarm volume too.",
+
   "durationSeconds": "{count} s",
   "durationMinutes": "{count} min",
   "alertCooldownLabel": "Pause between alerts for one keyword, s",

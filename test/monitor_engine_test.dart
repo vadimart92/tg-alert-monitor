@@ -23,6 +23,7 @@ class Harness {
     this.savedChats,
     this.monitoringFlags,
     this.alerts,
+    this.spokenFlags,
   );
 
   final FakeTdTransport transport;
@@ -39,6 +40,9 @@ class Harness {
 
   /// Matches handed to the local notifier.
   final List<MatchEntry> alerts;
+
+  /// Whether each of those alerts was told to read the message out loud.
+  final List<bool> spokenFlags;
 
   static Future<Harness> create({
     MonitorConfig config = const MonitorConfig(),
@@ -58,6 +62,7 @@ class Harness {
     final savedChats = <List<ChatRef>>[];
     final monitoringFlags = <bool>[];
     final alerts = <MatchEntry>[];
+    final spokenFlags = <bool>[];
 
     _installDefaultResponders(transport, folderChatIds);
 
@@ -78,8 +83,9 @@ class Harness {
       config: config,
       now: clock.call,
       forwardInterval: Duration.zero,
-      alert: (entry) async {
+      alert: (entry, {required bool speakText}) async {
         alerts.add(entry);
+        spokenFlags.add(speakText);
         if (alertsFail) throw StateError('сирена мовчить');
       },
       botApi: botApi == null
@@ -104,6 +110,7 @@ class Harness {
       savedChats,
       monitoringFlags,
       alerts,
+      spokenFlags,
     );
   }
 
@@ -1188,6 +1195,36 @@ void main() {
         harness.matchLog.statusUpdates.single.error,
         contains('сирена мовчить'),
       );
+      await harness.dispose();
+    });
+
+    test('reading the message aloud is off unless it was turned on', () async {
+      const config = MonitorConfig(
+        folderId: 7,
+        keywords: ['шахед'],
+        chats: [ChatRef(id: -100111, title: 'Тест', isChannel: true)],
+        delivery: AlertDelivery.local,
+      );
+      final harness = await Harness.create(config: config);
+      await harness.authenticate();
+      await harness.engine.startMonitoring(config);
+      await harness.settle();
+
+      harness.transport.push(
+        harness.textMessage(messageId: 1, text: 'Шахед над містом'),
+      );
+      await harness.settle();
+      expect(harness.spokenFlags, [false]);
+
+      // The switch reaches a running engine the same way every other setting
+      // does, and the very next alert obeys it.
+      await harness.engine.updateConfig(config.copyWith(speakMessage: true));
+      harness.clock.advance(const Duration(minutes: 1));
+      harness.transport.push(
+        harness.textMessage(messageId: 2, text: 'Шахед над Києвом'),
+      );
+      await harness.settle();
+      expect(harness.spokenFlags, [false, true]);
       await harness.dispose();
     });
 

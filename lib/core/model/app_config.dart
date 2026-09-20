@@ -95,6 +95,7 @@ class MonitorConfig {
     this.delivery = AlertDelivery.forward,
     this.botToken = '',
     this.alertCooldownSeconds = defaultAlertCooldownSeconds,
+    this.speakMessage = false,
   });
 
   static const int defaultMaxAgeMinutes = 10;
@@ -135,6 +136,14 @@ class MonitorConfig {
   /// the alerts are collected.
   final int alertCooldownSeconds;
 
+  /// Read the matched message out loud, after the siren.
+  ///
+  /// Off by default: it is the one part of the alert that says something new
+  /// every time, and also the one that keeps the phone talking for ten
+  /// seconds in the middle of the night. Whether that is worth it depends on
+  /// whether the owner intends to pick the phone up — which only they know.
+  final bool speakMessage;
+
   Duration get maxAge => Duration(minutes: maxAgeMinutes);
 
   Duration get alertCooldown => Duration(seconds: alertCooldownSeconds);
@@ -161,6 +170,7 @@ class MonitorConfig {
     AlertDelivery? delivery,
     String? botToken,
     int? alertCooldownSeconds,
+    bool? speakMessage,
   }) => MonitorConfig(
     folderId: folderId ?? this.folderId,
     folderName: folderName ?? this.folderName,
@@ -171,6 +181,7 @@ class MonitorConfig {
     delivery: delivery ?? this.delivery,
     botToken: botToken ?? this.botToken,
     alertCooldownSeconds: alertCooldownSeconds ?? this.alertCooldownSeconds,
+    speakMessage: speakMessage ?? this.speakMessage,
   );
 
   Map<String, dynamic> toJson() => {
@@ -183,6 +194,7 @@ class MonitorConfig {
     'delivery': delivery.name,
     'botToken': botToken,
     'alertCooldownSeconds': alertCooldownSeconds,
+    'speakMessage': speakMessage,
   };
 
   static MonitorConfig fromJson(Map<String, dynamic> json) => MonitorConfig(
@@ -203,6 +215,7 @@ class MonitorConfig {
     alertCooldownSeconds:
         (json['alertCooldownSeconds'] as num?)?.toInt() ??
         defaultAlertCooldownSeconds,
+    speakMessage: json['speakMessage'] as bool? ?? false,
   );
 }
 

@@ -86,7 +86,12 @@ abstract final class ConnectionPhase {
 
 /// Shows a match on this phone. Injected so the engine stays Flutter-free;
 /// the real implementation is [AlertNotifier] in the service isolate.
-typedef LocalAlert = Future<void> Function(MatchEntry entry);
+///
+/// [speakText] carries the owner's choice rather than the notifier reading it
+/// from storage: the engine already holds the authoritative config, and a
+/// second copy that has to be kept in step is a bug waiting for a quiet night.
+typedef LocalAlert =
+    Future<void> Function(MatchEntry entry, {required bool speakText});
 
 /// Bounded "already handled" set, keyed by chat and message id.
 class _RecentMessages {
@@ -688,7 +693,7 @@ class MonitorEngine {
       return _s.localAlertsUnavailable;
     }
     try {
-      await alert(entry);
+      await alert(entry, speakText: _config.speakMessage);
       return null;
     } catch (error) {
       _logger.error('local alert failed: $error');

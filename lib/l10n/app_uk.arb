@@ -117,6 +117,18 @@
   "keywordSoundErrorEmpty": "Файл не створено — вибраний рушій синтезу не вміє писати у файл. Спробуйте інший у системних налаштуваннях.",
   "close": "Закрити",
 
+  "voiceLanguage": "uk-UA",
+  "@voiceLanguage": {
+    "description": "BCP-47 tag the device speech engine is asked for. Not shown to anyone; translated only when the app is."
+  },
+  "speakMessage": "Зачитувати текст повідомлення",
+  "speakMessageHelp": "Після сирени телефон прочитає вголос сам допис — перші {limit} символів. Читає той самий голос, що й ключові слова, і теж на гучності будильника.",
+  "@speakMessageHelp": {
+    "placeholders": {
+      "limit": {"type": "int"}
+    }
+  },
+
   "durationSeconds": "{count} с",
   "@durationSeconds": {
     "placeholders": {

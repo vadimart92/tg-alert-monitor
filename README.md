@@ -192,6 +192,24 @@ because a keyword is often a stem.
   Ukrainian (Settings → Language and input → Text-to-speech).
 * Exclusion words never get a sound: nothing sounds for them.
 
+### Or have the phone read the message
+
+«Read the message out loud» on the «Notifications» card. Off by default. With
+it on, once the siren (or the keyword's own voice) has finished, the phone
+reads the matched post itself — the first 300 characters, which is where an
+alert channel puts the direction and the target.
+
+* Synthesis starts *before* the siren does and runs while it plays, so the
+  voice costs the alert no time at all.
+* It plays on the alarm stream like everything else here: being read the
+  message by a phone that had refused to sound the siren would be an odd kind
+  of alert.
+* The text goes to the same file every time (`<support>/alert_speech.wav`) and
+  is spoken by the same engine the keyword sounds use.
+* It happens inside the background service, not the app — matches arrive while
+  the UI is dead. If synthesis fails there, the alert has already sounded and
+  the failure is a line in the journal, nothing more.
+
 ## Who posts the alert: you, or a bot
 
 By default the app forwards the original **as you**, through your own Telegram

@@ -12,6 +12,7 @@ import '../../core/model/app_config.dart';
 import '../../core/storage/keyword_sound_store.dart';
 import '../../core/storage/settings_store.dart';
 import '../../l10n/app_localizations.dart';
+import '../../service/alert_notifier.dart';
 import '../../service/monitor_engine.dart';
 import '../duration_label.dart';
 import '../service_bridge.dart';
@@ -664,6 +665,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   fontSize: 11,
                   color: Theme.of(context).hintColor,
                 ),
+              ),
+              // Lives here rather than in the settings: it changes what an
+              // alert sounds like, which is what this card is about.
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _config.speakMessage,
+                title: Text(l.speakMessage),
+                subtitle: Text(
+                  l.speakMessageHelp(AlertNotifier.speechLimit),
+                  style: const TextStyle(fontSize: 11),
+                ),
+                onChanged: (value) =>
+                    _persist(_config.copyWith(speakMessage: value)),
               ),
             ],
           ],
